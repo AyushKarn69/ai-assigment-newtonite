@@ -23,6 +23,18 @@ export interface PaginationMeta {
   hasPrev: boolean;
 }
 
+export function buildPaginationMeta(page: number, pageSize: number, totalCount: number): PaginationMeta {
+  const totalPages = Math.ceil(totalCount / pageSize);
+  return {
+    page,
+    pageSize,
+    totalCount,
+    totalPages,
+    hasNext: page < totalPages,
+    hasPrev: page > 1,
+  };
+}
+
 export function successResponse<T>(data: T, meta?: PaginationMeta): ApiResponse<T> {
   return {
     success: true,

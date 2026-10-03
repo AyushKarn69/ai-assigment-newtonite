@@ -1,5 +1,7 @@
 import { InMemoryUserRepository, UserService } from './modules/users/index';
 import { AuthService, InMemorySessionStore, SessionStore } from './modules/auth/index';
+import { AuthorizationService } from './modules/authorization/index';
+import { InMemoryTeamRepository, TeamService } from './modules/teams/index';
 import { Config } from './config';
 
 /**
@@ -13,6 +15,9 @@ export interface AppContainer {
   userService: UserService;
   sessionStore: SessionStore;
   authService: AuthService;
+  teamRepository: InMemoryTeamRepository;
+  authorizationService: AuthorizationService;
+  teamService: TeamService;
 }
 
 export function createContainer(config: Config): AppContainer {
@@ -24,10 +29,17 @@ export function createContainer(config: Config): AppContainer {
     jwtExpiresIn: config.JWT_EXPIRES_IN,
   }, sessionStore);
 
+  const teamRepository = new InMemoryTeamRepository();
+  const authorizationService = new AuthorizationService(teamRepository);
+  const teamService = new TeamService(teamRepository, userService, authorizationService);
+
   return {
     userRepository,
     userService,
     sessionStore,
     authService,
+    teamRepository,
+    authorizationService,
+    teamService,
   };
 }

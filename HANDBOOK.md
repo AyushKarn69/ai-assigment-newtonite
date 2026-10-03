@@ -49,10 +49,21 @@ ai-assignment/
         │   │   ├── auth.routes.ts        # /api/auth/* + /api/users/me
         │   │   └── index.ts
         │   │
-        │   └── users/
-        │       ├── user.entity.ts        # User domain + repository interface
-        │       ├── user.repository.ts     # In-memory UserRepository
-        │       ├── user.service.ts        # User creation, lookup, password hashing
+        │   ├── users/
+        │   │   ├── user.entity.ts        # User domain + repository interface
+        │   │   ├── user.repository.ts     # In-memory UserRepository
+        │   │   ├── user.service.ts        # User creation, lookup, password hashing
+        │   │   └── index.ts
+        │   │
+        │   ├── authorization/
+        │   │   ├── authorization.service.ts  # Admin / team-member / team-manager policy
+        │   │   └── index.ts
+        │   │
+        │   └── teams/
+        │       ├── team.entity.ts        # Team, TeamMember + repository interface
+        │       ├── team.repository.ts     # In-memory TeamRepository
+        │       ├── team.service.ts        # Team + membership business rules
+        │       ├── team.routes.ts        # /api/teams/*
         │       └── index.ts
         │
         └── shared/
@@ -108,6 +119,9 @@ createContainer(config)
     → UserService(userRepo)
     → InMemorySessionStore
     → AuthService(userService, authConfig, sessionStore)
+    → InMemoryTeamRepository
+    → AuthorizationService(teamRepo)          # needs only findMember()
+    → TeamService(teamRepo, userService, authorizationService)
 ```
 
 The [`buildApp()`](file:///e:/ai-assignment/backend/src/app.ts) factory accepts an optional `container` to allow full dependency injection in tests.
@@ -250,6 +264,35 @@ Helper functions: `successResponse(data, meta?)` and `errorResponse(code, messag
 
 ---
 
+### Authorization Module ([`modules/authorization/`](file:///e:/ai-assignment/backend/src/modules/authorization))
+
+Central policy service, reused by every module that needs permission checks. Depends only on the small `MembershipLookup` interface (`findMember`), which `TeamRepository` satisfies structurally.
+
+| Method | Allows | Error on denial |
+|---|---|---|
+| `assertAdmin(user)` | global `ADMIN` | `403 ADMIN_REQUIRED` |
+| `assertTeamMember(user, teamId)` | `ADMIN`, or any member of the team | `403 NOT_TEAM_MEMBER` |
+| `assertTeamManager(user, teamId)` | `ADMIN`, or a `MANAGER` of the team | `403 TEAM_MANAGER_REQUIRED` |
+| `getTeamRole(user, teamId)` | — (returns `MANAGER` / `MEMBER` / `null`) | — |
+
+Global `ADMIN` bypasses all team-level checks. Team roles are scoped per team: managing one team grants nothing in another.
+
+---
+
+### Teams Module ([`modules/teams/`](file:///e:/ai-assignment/backend/src/modules/teams))
+
+**TeamRepository Interface** — teams plus memberships (`addMember`, `findMember`, `updateMemberRole`, `removeMember`, `listMembers`, `listMembershipsForUser`). `InMemoryTeamRepository` is the pre-database adapter.
+
+**TeamService** business rules:
+- Create team: `ADMIN` only; names unique case-insensitively (`409 TEAM_NAME_TAKEN`); optional `managerId` becomes the first `MANAGER`.
+- List teams: admin sees all, everyone else only teams they belong to; paginated, sorted by name. Each team carries `myRole`.
+- Get team / list members: admin or team member.
+- Add / change role / remove member: admin or team manager. Duplicate → `409 ALREADY_TEAM_MEMBER`; unknown user → `404 USER_NOT_FOUND`; non-member target → `404 MEMBER_NOT_FOUND`.
+- A team must always keep at least one manager: demoting or removing the last one → `422 TEAM_REQUIRES_MANAGER`.
+- Authorization is evaluated per request against current membership, so removal takes effect immediately (JWT carries only the *global* role).
+
+---
+
 ### Validation Schemas ([`common-schemas.ts`](file:///e:/ai-assignment/backend/src/shared/validation/common-schemas.ts))
 
 Reusable Zod schemas for all list endpoints:
@@ -270,6 +313,13 @@ Reusable Zod schemas for all list endpoints:
 | `POST` | `/api/auth/login` | No | Login with email/password → JWT token |
 | `POST` | `/api/auth/logout` | Yes | Invalidate current token |
 | `GET` | `/api/users/me` | Yes | Get authenticated user profile |
+| `GET` | `/api/teams` | Yes | List my teams (admin: all), paginated |
+| `POST` | `/api/teams` | Admin | Create team (optional `managerId`) |
+| `GET` | `/api/teams/:id` | Member/Admin | Get team (includes `myRole`) |
+| `GET` | `/api/teams/:id/members` | Member/Admin | List members |
+| `POST` | `/api/teams/:id/members` | Manager/Admin | Add member `{userId, role?}` |
+| `PATCH` | `/api/teams/:id/members/:userId` | Manager/Admin | Change member role |
+| `DELETE` | `/api/teams/:id/members/:userId` | Manager/Admin | Remove member |
 
 ---
 
@@ -277,9 +327,6 @@ Reusable Zod schemas for all list endpoints:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/teams` | List teams |
-| `GET` | `/api/teams/:id` | Get team |
-| `GET` | `/api/teams/:id/members` | List team members |
 | `GET` | `/api/work-items` | List work items (paginated, filtered) |
 | `POST` | `/api/work-items` | Create work item |
 | `GET` | `/api/work-items/:id` | Get work item |
@@ -294,13 +341,13 @@ Reusable Zod schemas for all list endpoints:
 
 ---
 
-## Roles & Authorization (Defined, Implementation In-Progress)
+## Roles & Authorization
 
 | Role | Scope | Capabilities |
 |---|---|---|
 | `ADMIN` | Global | Full system access |
 | `USER` | Global | Base authenticated access |
-| `MANAGER` | Team | Manage team work, assign items, change workflow |
+| `MANAGER` | Team | Manage team membership; (phase D+) manage team work, assign items, change workflow |
 | `MEMBER` | Team | View & work on permitted items |
 
 ---
@@ -333,7 +380,7 @@ npm run build
 
 ## Test Status
 
-**50 tests passing** across 7 test files. `npm run typecheck` is clean.
+**80 tests passing** across 9 test files. `npm run typecheck` is clean.
 
 | Test File | Tests | Status |
 |---|---|---|
@@ -344,6 +391,8 @@ npm run build
 | `app.test.ts` | 5 | ✅ All pass |
 | `modules/users/user.service.test.ts` (USER-001…011) | 11 | ✅ All pass |
 | `modules/auth/auth.test.ts` (AUTH-001…014) | 14 | ✅ All pass |
+| `modules/authorization/authorization.service.test.ts` (AUTHZ-001…006) | 6 | ✅ All pass |
+| `modules/teams/team.test.ts` (TEAM-001…024) | 24 | ✅ All pass |
 
 Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-assignment/backend/src/TEST_CASES.md).
 
@@ -354,8 +403,8 @@ Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-a
 | Phase | Description | Status |
 |---|---|---|
 | **A** | Initial setup (config, errors, health, tests) | ✅ Complete |
-| **B** | Authentication + Identity | 🔄 In Progress |
-| **C** | Teams + Roles + Authorization | ⬜ Pending |
+| **B** | Authentication + Identity | ✅ Complete |
+| **C** | Teams + Roles + Authorization | ✅ Complete |
 | **D** | Work Item domain + CRUD | ⬜ Pending |
 | **E** | Exclusive Work Item locking / concurrency | ⬜ Pending |
 | **F** | Activity history | ⬜ Pending |
@@ -371,6 +420,7 @@ Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-a
 
 ```
 6769112 feat(setup): initial backend setup with Fastify, config validation, error hierarchy, health endpoints, and tests
+d359b69 feat(auth): add users and auth modules with JWT login/logout
 ```
 
-Phase B (auth + users) work is in the working tree and not yet committed.
+Later commits: run `git log --oneline` (phase C: teams + authorization).

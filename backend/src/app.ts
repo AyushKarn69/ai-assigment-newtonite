@@ -6,6 +6,7 @@ import { globalErrorHandler } from './shared/middleware/error-handler';
 import { successResponse } from './shared/types/index';
 import { createContainer, AppContainer } from './container';
 import { registerAuthRoutes } from './modules/auth/index';
+import { registerTeamRoutes } from './modules/teams/index';
 
 export interface AppDependencies {
   config?: Config;
@@ -65,6 +66,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
 
   // --- Module routes ---
   registerAuthRoutes(app, container.authService);
+  registerTeamRoutes(app, container.teamService, container.authService);
 
   // --- Content type parser for JSON ---
   app.addContentTypeParser(

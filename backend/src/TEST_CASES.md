@@ -1,4 +1,6 @@
-# Initial Setup - Test Cases
+# Test Cases
+
+## Phase A — Initial Setup
 
 | Test ID | Feature | Scenario | Expected Result | Status |
 |-----------|-------------------|----------------------------------------|--------------------------------------|--------|
@@ -27,3 +29,68 @@
 | SETUP-023 | Pagination Schema | Negative page rejected | page=-1 rejected | PASS |
 | SETUP-024 | Sort Schema | Default values | sortOrder=desc, sortBy undefined | PASS |
 | SETUP-025 | Sort Schema | Invalid sortOrder rejected | sortOrder=invalid rejected | PASS |
+
+## Phase B — Users & Authentication
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| USER-001 | UserService | createUser returns the user | No passwordHash/password in result; role=USER, isActive=true | PASS |
+| USER-002 | UserService | Password storage | Stored value is a bcrypt hash, never the plain password | PASS |
+| USER-003 | UserService | Email normalisation | Email lowercased; lookup is case-insensitive | PASS |
+| USER-004 | UserService | Duplicate email (any case) | ConflictError | PASS |
+| USER-005 | UserService | Explicit role on create | Role honoured (ADMIN) | PASS |
+| USER-006 | UserService | findById | User returned without password hash | PASS |
+| USER-007 | UserService | findById unknown id | NotFoundError | PASS |
+| USER-008 | UserService | findByIdInternal unknown id | null | PASS |
+| USER-009 | UserRepository | update merges fields | updatedAt bumped; email index re-pointed to new email | PASS |
+| USER-010 | UserRepository | update unknown id | Throws 'User not found' | PASS |
+| USER-011 | UserRepository | clear | All users and email index removed | PASS |
+| AUTH-001 | Login | Valid credentials | 200, token + user info, no passwordHash | PASS |
+| AUTH-002 | Login | Email in different case | 200 | PASS |
+| AUTH-003 | Login | Wrong password | 401 INVALID_CREDENTIALS | PASS |
+| AUTH-004 | Login | Unknown email | 401 INVALID_CREDENTIALS (same as wrong password) | PASS |
+| AUTH-005 | Login | Disabled account | 401 ACCOUNT_DISABLED | PASS |
+| AUTH-006 | Login | Invalid email format / missing password | 400 VALIDATION_ERROR | PASS |
+| AUTH-007 | GET /api/users/me | Valid token | 200 with authenticated user | PASS |
+| AUTH-008 | Auth Middleware | No Authorization header | 401 MISSING_AUTH | PASS |
+| AUTH-009 | Auth Middleware | Malformed token | 401 INVALID_TOKEN | PASS |
+| AUTH-010 | Auth Middleware | Token signed with another secret | 401 INVALID_TOKEN | PASS |
+| AUTH-011 | Auth Middleware | Expired token | 401 INVALID_TOKEN | PASS |
+| AUTH-012 | Logout | Token used after logout | Logout 200; later request 401 TOKEN_INVALIDATED | PASS |
+| AUTH-013 | Logout | Other session of same user | Unaffected, still 200 | PASS |
+| AUTH-014 | Logout | No token | 401 | PASS |
+
+## Phase C — Teams & Authorization
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| AUTHZ-001 | AuthorizationService | isAdmin | True only for global ADMIN | PASS |
+| AUTHZ-002 | AuthorizationService | assertAdmin | Throws ForbiddenError ADMIN_REQUIRED for non-admins | PASS |
+| AUTHZ-003 | AuthorizationService | getTeamRole | MANAGER / MEMBER for that team, null otherwise | PASS |
+| AUTHZ-004 | AuthorizationService | assertTeamMember | Allows member, manager, admin; outsider 403 NOT_TEAM_MEMBER | PASS |
+| AUTHZ-005 | AuthorizationService | assertTeamManager | Allows manager, admin; member/outsider TEAM_MANAGER_REQUIRED | PASS |
+| AUTHZ-006 | AuthorizationService | Manager of another team | Forbidden (no cross-team rights) | PASS |
+| TEAM-001 | Auth | Team endpoint without token | 401 | PASS |
+| TEAM-002 | Create Team | Admin creates team with managerId | 201; manager listed as MANAGER; admin myRole=null | PASS |
+| TEAM-003 | Create Team | Non-admin creates team | 403 ADMIN_REQUIRED | PASS |
+| TEAM-004 | Create Team | Duplicate name, different case | 409 TEAM_NAME_TAKEN | PASS |
+| TEAM-005 | Create Team | Blank name / unknown managerId | 400 VALIDATION_ERROR / 404 USER_NOT_FOUND; no team left behind | PASS |
+| TEAM-006 | List Teams | Member lists teams | Only own teams, with myRole | PASS |
+| TEAM-007 | List Teams | User with no teams | 200, empty list, totalCount=0 | PASS |
+| TEAM-008 | List Teams | Admin lists teams | All teams visible | PASS |
+| TEAM-009 | List Teams | Pagination | meta page/pageSize/hasNext/hasPrev correct; pageSize=1000 rejected (400) | PASS |
+| TEAM-010 | Get Team | Member, manager, admin, outsider | 200 with myRole for members/admin; outsider 403 NOT_TEAM_MEMBER | PASS |
+| TEAM-011 | Get Team | Unknown id / malformed id | 404 TEAM_NOT_FOUND / 400 | PASS |
+| TEAM-012 | List Members | Member lists members | Names, emails, roles; no password data | PASS |
+| TEAM-013 | List Members | Outsider lists members | 403 | PASS |
+| TEAM-014 | Add Member | Manager adds user without role | 201, default role MEMBER; user can now read team | PASS |
+| TEAM-015 | Add Member | Plain member adds user | 403 TEAM_MANAGER_REQUIRED | PASS |
+| TEAM-016 | Add Member | Manager of a different team | 403 | PASS |
+| TEAM-017 | Add Member | Admin (not a member) adds manager | 201, role MANAGER | PASS |
+| TEAM-018 | Add Member | Duplicate / unknown user / invalid role | 409 ALREADY_TEAM_MEMBER / 404 USER_NOT_FOUND / 400 | PASS |
+| TEAM-019 | Change Role | Member tries; manager promotes | 403; 200, promoted user gains manager powers | PASS |
+| TEAM-020 | Change Role | Target is not a member | 404 MEMBER_NOT_FOUND | PASS |
+| TEAM-021 | Last Manager | Demote or remove the only manager | 422 TEAM_REQUIRES_MANAGER | PASS |
+| TEAM-022 | Last Manager | Manager steps down after another is promoted | 200; remaining manager keeps role | PASS |
+| TEAM-023 | Remove Member | Removed member requests team | Removal 200; next request 403 | PASS |
+| TEAM-024 | Remove Member | Member removes others / target not a member | 403 / 404 MEMBER_NOT_FOUND | PASS |
