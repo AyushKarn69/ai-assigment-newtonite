@@ -489,3 +489,21 @@ PostgreSQL instead of memory; both modes pass (366 tests).
 | Sign-up form | Empty form, short password, mismatched confirmation, password strength hint, email already registered (with link to sign in) | OK |
 | Sign-up | A real registration signs the person in and opens the dashboard with a welcome notice that shows their email | OK |
 | Onboarding | After a manager adds them by email, the welcome notice disappears and the team's work shows | OK |
+
+## Teams page (web app)
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| UILIB-027 | teams page | Sort members | Managers first, then alphabetical ignoring case; input untouched | PASS |
+| UILIB-028 | teams page | Last-manager protection | Only manager is protected; with two managers neither is; a member never is | PASS |
+| UILIB-029 | teams page | Summary line | '4 members · 2 managers', singular forms read correctly | PASS |
+| UILIB-030 | teams page | Add-member email check | Accepts a normal email; rejects blank, partial and spaced addresses | PASS |
+
+### Browser verification (manual)
+
+| Area | What was checked | Result |
+|---|---|---|
+| Teams (administrator) | Sees all teams; *New Team* validates the name, rejects a duplicate name, creates a team with a first manager by email | OK |
+| Teams (managers) | Add by email: unknown email gives a clear message; adding a registered person works; summary updates | OK |
+| Teams (roles) | Promote and demote; demoting or removing the only manager is refused with an explanation and the control resets; removing a plain member works | OK |
+| Teams (permissions) | A person who manages one team and is only a member of others sees add/role/remove controls only for the team they manage; no *New Team* button for non-administrators | OK |

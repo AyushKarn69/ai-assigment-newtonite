@@ -143,7 +143,7 @@ function welcomeNotice() {
       ${icon('waving_hand', 'text-[22px] mt-0.5')}
       <div class="min-w-0">
         <p class="font-headline text-lg font-semibold">Welcome, ${esc(user.name)}</p>
-        <p class="mt-1 text-sm leading-relaxed">You are not part of a team yet, so there is no work to show. Ask a team manager or an administrator to add you, and give them this email address: <strong class="font-mono break-all">${esc(user.email)}</strong>. Once you are added, your team's work appears here.</p>
+        <p class="mt-1 text-sm leading-relaxed">You are not part of a team yet, so there is no work to show. Ask a team manager or an administrator to add you (they do it on the Teams page), and give them this email address: <strong class="font-mono break-all">${esc(user.email)}</strong>. Once you are added, your team's work appears here.</p>
       </div>
     </div>`;
 }

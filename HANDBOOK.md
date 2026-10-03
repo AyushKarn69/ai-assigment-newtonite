@@ -532,6 +532,7 @@ Keys are per user, kept for 24 hours, and claimed atomically (20 simultaneous ca
 | Dashboard | Counters, urgent work, my work, team load, recent activity | Approvals, overdue/SLA, telemetry, batch operations, "my work today" checklist |
 | Work items | Search, quick filters, 5 dropdown filters, sorting, pagination, empty/error states | Batch actions, CSV export, SLA cards, "awaiting approval" |
 | Work item | Attributes, edit with lock (auto-renewed), status moves, assign, comments, audit trail, lock banner, 409 conflict panel | Approval workflow, linked dependencies, cluster telemetry, runbook checklist, markdown toolbar |
+| Teams | Administrators create teams; managers add people by email, change roles, remove people (a team keeps at least one manager) | Per-team settings, invitations by email |
 | Shell | Search, New Work Item, API health, notifications, profile/sign out | Environment switcher, websocket status |
 
 Notes: all user text is HTML-escaped before display; a viewer's buttons follow their permissions (the server still enforces everything); edit sessions release their lock when the tab closes; production sends a Content-Security-Policy that allows the Tailwind CDN, Google Fonts and inline styles/scripts the app uses (precompiling the CSS would allow a stricter policy). Static serving blocks path traversal and dotfiles.

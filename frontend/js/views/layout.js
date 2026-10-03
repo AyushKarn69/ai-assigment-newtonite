@@ -9,6 +9,7 @@ import { avatar, icon, toast } from '../ui.js';
 const NAV = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard', href: '#/dashboard' },
   { key: 'work-items', label: 'Work Items', icon: 'assignment', href: '#/work-items' },
+  { key: 'teams', label: 'Teams', icon: 'groups', href: '#/teams' },
 ];
 
 const NOTIFICATION_ICONS = {

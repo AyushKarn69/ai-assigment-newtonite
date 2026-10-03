@@ -11,6 +11,8 @@ import { changedFields, conflictRows, theirOnlyChanges } from '../../frontend/js
 // @ts-expect-error plain JS modules without type declarations
 import { validateRegistration, passwordStrength, byteLength } from '../../frontend/js/lib/validation.js';
 // @ts-expect-error plain JS modules without type declarations
+import { sortMembers, managerCount, isLastManager, memberSummary, looksLikeEmail } from '../../frontend/js/lib/teams.js';
+// @ts-expect-error plain JS modules without type declarations
 import { describeActivity } from '../../frontend/js/lib/activity.js';
 
 describe('format', () => {
@@ -254,5 +256,40 @@ describe('sign-up form validation', () => {
     expect(passwordStrength('alllowercase')).toBeLessThan(passwordStrength('Mixed-Case-and-Digits-123'));
     expect(passwordStrength('Mixed-Case-and-Digits-123')).toBe(3);
     expect(passwordStrength(undefined)).toBe(0);
+  });
+});
+
+describe('teams page helpers', () => {
+  const people = [
+    { userId: '1', name: 'zoe', role: 'MEMBER' },
+    { userId: '2', name: 'Bob', role: 'MEMBER' },
+    { userId: '3', name: 'carl', role: 'MANAGER' },
+    { userId: '4', name: 'Amy', role: 'MANAGER' },
+  ];
+
+  it('UILIB-027: managers are listed first, then people alphabetically ignoring case; input is untouched', () => {
+    const copy = [...people];
+    expect(sortMembers(people).map((m: { name: string }) => m.name)).toEqual(['Amy', 'carl', 'Bob', 'zoe']);
+    expect(people).toEqual(copy);
+    expect(sortMembers([])).toEqual([]);
+  });
+
+  it('UILIB-028: the only manager is protected; with two managers neither is', () => {
+    expect(managerCount(people)).toBe(2);
+    expect(isLastManager(people, people[2])).toBe(false);
+    const single = [people[0], people[2]];
+    expect(isLastManager(single, people[2])).toBe(true);
+    expect(isLastManager(single, people[0])).toBe(false); // a plain member is never "the last manager"
+  });
+
+  it('UILIB-029: the summary line reads naturally, including singular forms', () => {
+    expect(memberSummary(people)).toBe('4 members · 2 managers');
+    expect(memberSummary([people[2]])).toBe('1 member · 1 manager');
+    expect(memberSummary([])).toBe('0 members · 0 managers');
+  });
+
+  it('UILIB-030: the add-member email check', () => {
+    expect(looksLikeEmail(' riya@example.com ')).toBe(true);
+    for (const bad of ['', 'riya', 'riya@', '@example.com', 'a b@example.com', undefined]) expect(looksLikeEmail(bad)).toBe(false);
   });
 });

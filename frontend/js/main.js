@@ -5,6 +5,7 @@
 //   #/dashboard             operational command
 //   #/work-items[?filters]  list
 //   #/work-items/:id        detail
+//   #/teams                 teams and members
 
 import { api, session, setUnauthorizedHandler } from './api.js';
 import { parseQueryString } from './lib/presets.js';
@@ -16,6 +17,7 @@ import { mountShell } from './views/layout.js';
 import { mountLogin } from './views/login.js';
 import { mountRegister } from './views/register.js';
 import { openNewItemModal } from './views/newItem.js';
+import { mountTeams } from './views/teams.js';
 import { mountWorkItems } from './views/workItems.js';
 
 const root = document.getElementById('app');
@@ -138,6 +140,11 @@ function route() {
         document.title = 'Work Items · Newtonite Ops';
         leaveView = mountWorkItems(view, { query, onNewItem: (teamId) => openNewItemModal({ defaultTeamId: teamId }) });
       }
+      break;
+    case 'teams':
+      document.title = 'Teams · Newtonite Ops';
+      shell.setActive('teams');
+      leaveView = mountTeams(view);
       break;
     default:
       document.title = 'Not found · Newtonite Ops';
