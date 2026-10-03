@@ -66,7 +66,8 @@ export function createTestConfig(overrides: Partial<Config> = {}): Config {
     HOST: '0.0.0.0',
     NODE_ENV: 'test',
     LOG_LEVEL: 'error',
-    DATABASE_URL: undefined,
+    // `npm run test:db` points the whole suite at the PostgreSQL test database
+    DATABASE_URL: process.env.DB_TESTS ? process.env.TEST_DATABASE_URL : undefined,
     REDIS_HOST: 'localhost',
     REDIS_PORT: 6379,
     REDIS_PASSWORD: '',

@@ -5,6 +5,7 @@ import { AppContainer, createContainer } from '../container';
 import { TeamRole } from '../shared/types/auth';
 import { JobQueue } from '../shared/queue/index';
 import { Clock } from '../shared/utils/clock';
+import { dbTestsEnabled, resetDatabase } from './db';
 
 export const PASSWORD = 'a-long-test-password';
 export const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
@@ -39,6 +40,7 @@ export interface Harness {
 export async function createHarness(
   options: { config?: Partial<Config>; clock?: Clock; jobQueue?: JobQueue } = {},
 ): Promise<Harness> {
+  if (dbTestsEnabled()) await resetDatabase(); // every harness starts from empty tables
   const config = createTestConfig(options.config);
   const container = createContainer(config, { clock: options.clock, jobQueue: options.jobQueue });
 

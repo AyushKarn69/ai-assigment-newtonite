@@ -3,6 +3,7 @@ import path from 'node:path';
 import { buildApp } from './app';
 import { createContainer } from './container';
 import { DEMO_PASSWORD, seedDemoData } from './seed';
+import { disconnectPrisma } from './shared/db/prisma';
 import { createModuleLogger } from './shared/utils/logger';
 
 const logger = createModuleLogger('server');
@@ -11,7 +12,8 @@ async function main(): Promise<void> {
   const config = getConfig();
 
   const container = createContainer(config);
-  if (config.SEED_DEMO_DATA) {
+  // Demo data only goes into an empty system, so restarting against a database never duplicates it
+  if (config.SEED_DEMO_DATA && (await container.userRepository.findAll()).length === 0) {
     const seeded = await seedDemoData(container);
     logger.info(
       { ...seeded, accounts: 'ada@newtonite.test (admin), sarah@, liam@, elena@, carlos@, priya@newtonite.test' },
@@ -31,6 +33,7 @@ async function main(): Promise<void> {
       logger.info({ signal }, 'Received shutdown signal');
       try {
         await app.close();
+        await disconnectPrisma();
         logger.info('Server closed gracefully');
         process.exit(0);
       } catch (err) {

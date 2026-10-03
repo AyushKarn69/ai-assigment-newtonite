@@ -9,6 +9,9 @@
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:db": "node scripts/test-db.mjs",
+    "db:migrate": "prisma migrate deploy",
+    "db:generate": "prisma generate",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src/ --ext .ts",
     "typecheck": "tsc --noEmit"
