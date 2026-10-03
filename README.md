@@ -12,6 +12,21 @@ An internal tool for tracking operational **work items** (customer issues, engin
 
 Tech stack: Node.js 22 · TypeScript · Fastify 5 · Zod · Prisma 6 + PostgreSQL · Vitest. The web app is plain HTML/CSS/JavaScript (no build step) served by the backend.
 
+
+## Screenshots
+
+**Dashboard** — counters for my work, high/critical, unassigned and blocked items; urgent work; team load; recent activity.
+
+![Dashboard: Operational Command](preview-images/Screenshot%202026-10-04%20051619.png)
+
+**Work item** — attributes, status and owner controls, notes, and the immutable audit trail.
+
+![Work item detail with notes and attributes](preview-images/Screenshot%202026-10-04%20051636.png)
+
+**Teams & Members** — administrators create teams; managers add people by email and manage roles.
+
+![Teams and members](preview-images/Screenshot%202026-10-04%20051645.png)
+
 ---
 
 ## Quick start (about 5 minutes)
