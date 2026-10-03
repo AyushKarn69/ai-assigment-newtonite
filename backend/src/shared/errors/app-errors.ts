@@ -83,6 +83,19 @@ export class IdempotencyConflictError extends AppError {
   }
 }
 
+export class TooManyRequestsError extends AppError {
+  public readonly retryAfterSeconds?: number;
+
+  constructor(
+    message = 'Too many requests',
+    code = 'TOO_MANY_REQUESTS',
+    retryAfterSeconds?: number,
+  ) {
+    super(message, 429, code);
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 export class InternalError extends AppError {
   constructor(message = 'Internal server error', code = 'INTERNAL_ERROR') {
     super(message, 500, code, false);

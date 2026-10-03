@@ -210,3 +210,220 @@
 | ACT-019 | Access | Member, manager, admin, other-team user | 200 / 200 / 200 / 403 NOT_TEAM_MEMBER | PASS |
 | ACT-020 | Access | Unknown item / malformed id | 404 WORK_ITEM_NOT_FOUND / 400 | PASS |
 | ACT-021 | Access | POST/PATCH/PUT/DELETE on the activity path (as admin) | 404 for all; history unchanged (read-only) | PASS |
+
+## Phase G — Comments
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| COMM-001 | Auth | Comment endpoints without token | 401 | PASS |
+| COMM-002 | Add | Member adds a comment | 201; author id and name, body and time recorded | PASS |
+| COMM-003 | Add | Manager, admin, user from another team | 201 / 201 / 403 NOT_TEAM_MEMBER | PASS |
+| COMM-004 | Add | Empty, whitespace, >5000 chars, missing, non-string | 400 VALIDATION_ERROR each; text is trimmed; exactly 5000 chars allowed | PASS |
+| COMM-005 | Add | Unknown item / malformed id | 404 WORK_ITEM_NOT_FOUND / 400 | PASS |
+| COMM-006 | List | Default order and order=desc | Oldest first / newest first | PASS |
+| COMM-007 | List | Comments created in the same instant | Keep creation order | PASS |
+| COMM-008 | List | Pagination | Correct slice and meta; pageSize>100 rejected | PASS |
+| COMM-009 | List | Two items; item with no comments | Separate lists; empty list with totalCount 0 | PASS |
+| COMM-010 | List | Members/admin vs other teams | 200 / 403 | PASS |
+| COMM-011 | Locking | Comment while another user holds the edit lock | 201 (comments need no lock) | PASS |
+| COMM-012 | Rules | Comment on a closed item | 201; the item itself is unchanged | PASS |
+| COMM-013 | Activity | Add a comment | COMMENT_ADDED entry linking commentId, without duplicating the text | PASS |
+| COMM-014 | Immutability | PATCH/PUT/DELETE a comment | 404 for all; comment unchanged | PASS |
+| COMM-015 | Safety | Markdown and <script> in a comment | Stored verbatim (clients escape on display) | PASS |
+
+## Phase H — Search, Filters, Keys, Dashboard
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| SRCH-001 | Search | Title substring, any case | Matching item only | PASS |
+| SRCH-002 | Search | Text in the description | Matching item found | PASS |
+| SRCH-003 | Search | Term present in several items | All matches, across title and description | PASS |
+| SRCH-004 | Search | By key (NW-…, lower case) or number | Item found | PASS |
+| SRCH-005 | Search | No match | Empty page, totalCount 0 | PASS |
+| SRCH-006 | Search | Blank search | Ignored; all items | PASS |
+| SRCH-007 | Search | Search combined with type/priority filters | AND semantics | PASS |
+| SRCH-008 | Search | Search for another team's item | Never leaks; own team finds it | PASS |
+| SRCH-009 | Search | Paging through search results | totalCount reflects the filtered set | PASS |
+| SRCH-010 | Search | Search term over 200 characters | 400 | PASS |
+| FILT-001 | Filter | status=BLOCKED,CLOSED | Any of the listed statuses | PASS |
+| FILT-002 | Filter | priority=HIGH,CRITICAL | Both priorities | PASS |
+| FILT-003 | Filter | type with two values | Both types | PASS |
+| FILT-004 | Filter | Invalid, empty or malformed list values | 400 VALIDATION_ERROR | PASS |
+| FILT-005 | Filter | assignee=me and assignee=unassigned | My items / unowned items | PASS |
+| FILT-006 | Filter | assignee=<user id>, legacy assigneeId, bogus value | Same result for both forms; bogus 400 | PASS |
+| FILT-007 | Filter | createdBy | Items reported by that user | PASS |
+| FILT-008 | Filter | Several filters plus sort | Combined correctly; priority ties broken by creation time | PASS |
+| KEY-001 | Keys | Sequential NW-numbers | Unique, stable, increasing by one | PASS |
+| KEY-002 | Keys | 10 simultaneous creations | 10 distinct keys | PASS |
+| PROF-001 | Profile | GET /api/users/me | id, email, name, role; no password data | PASS |
+| WI-029 | Transitions | Create/get/update responses | Include allowedTransitions for the current status | PASS |
+| WI-030 | Transitions | Take an offered transition as manager | Always accepted | PASS |
+| WI-031 | Transitions | List endpoint | Items do not carry allowedTransitions | PASS |
+| DASH-001 | Auth | Dashboard without token | 401 | PASS |
+| DASH-002 | Counts | Member's counters | Only open work in their teams (closed/resolved excluded) | PASS |
+| DASH-003 | Counts | byStatus | Every status counted | PASS |
+| DASH-004 | Counts | Another member of the same team | Their own 'my work' number | PASS |
+| DASH-005 | Team load | Visible teams | Open, blocked, unassigned per team | PASS |
+| DASH-006 | Scope | User of a different team | Only their team's numbers | PASS |
+| DASH-007 | Scope | Admin | All teams, busiest first | PASS |
+| DASH-008 | Scope | User with no teams | Zeros and empty lists | PASS |
+| DASH-009 | Activity | Recent activity | Newest first, capped at 10, with item key, title and actor name | PASS |
+| DASH-010 | Activity | Other teams' items | Never included; admin sees them | PASS |
+| DASH-011 | Counts | Block an item | Blocked counter rises by one | PASS |
+
+## Phase I — Background Jobs & Notifications
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| QUEUE-001 | Job Queue | enqueue then drain | enqueue returns before the job runs; drain waits for it | PASS |
+| QUEUE-002 | Job Queue | Two jobs, first slower | Run one at a time, in order | PASS |
+| QUEUE-003 | Job Queue | Job fails twice then succeeds | Retried; succeeds; nothing dead-lettered | PASS |
+| QUEUE-004 | Job Queue | Job always fails | Dead-lettered after maxAttempts with payload and error | PASS |
+| QUEUE-005 | Job Queue | A failing job followed by a good one | Later job still runs | PASS |
+| QUEUE-006 | Job Queue | No handler registered | Dead-lettered with explanation | PASS |
+| QUEUE-007 | Job Queue | Job enqueues another job | Both processed before drain resolves | PASS |
+| QUEUE-008 | Job Queue | drain on an idle queue; two drains | Resolve immediately / both resolve | PASS |
+| QUEUE-009 | Job Queue | close() | Queued jobs finish; new jobs refused | PASS |
+| QUEUE-010 | Job Queue | Retries and dead letters | Reported to the logger | PASS |
+| NOTIF-001 | Auth | All notification endpoints without token | 401 | PASS |
+| NOTIF-002 | Rules | Manager assigns an item | Assignee notified (ASSIGNED); assigner is not | PASS |
+| NOTIF-003 | Rules | Create with an assignee | Assignee notified | PASS |
+| NOTIF-004 | Rules | Reassign | New assignee ASSIGNED, previous UNASSIGNED | PASS |
+| NOTIF-005 | Rules | Status change | Assignee and reporter notified, not the actor | PASS |
+| NOTIF-006 | Rules | Assign + status change in one save | Assignee gets only the assignment notice; reporter gets the status one | PASS |
+| NOTIF-007 | Rules | Comment | Assignee and reporter notified, not the commenter | PASS |
+| NOTIF-008 | Rules | Assignee who is also the reporter | One notification, not two | PASS |
+| NOTIF-009 | Rules | Force-release a lock | Previous holder notified | PASS |
+| NOTIF-010 | Rules | Own actions, lock events, no-op saves | No notifications | PASS |
+| NOTIF-011 | Rules | Rejected request | No notifications | PASS |
+| NOTIF-012 | Rules | Recipient removed from the team | Not notified | PASS |
+| NOTIF-013 | Rules | Admin who reported an item | Notified even though not a team member | PASS |
+| NOTIF-014 | Privacy | Inboxes | Each user sees only their own | PASS |
+| NOTIF-015 | List | Ordering, pagination, unread filter | Newest first; correct meta; invalid unread value 400 | PASS |
+| NOTIF-016 | Count | Unread count | Follows reading | PASS |
+| NOTIF-017 | Read | Mark read twice | Idempotent; first read time kept | PASS |
+| NOTIF-018 | Read | Someone else's / unknown / malformed id | 404 NOTIFICATION_NOT_FOUND / 404 / 400; untouched | PASS |
+| NOTIF-019 | Read | read-all | Marks only mine; returns how many changed | PASS |
+| NOTIF-020 | Async | Immediately after the request | No notification yet; arrives after the queue runs | PASS |
+| NOTIF-021 | Reliability | Same job replayed | No duplicate notification | PASS |
+| NOTIF-022 | Reliability | Transient failure twice | Retried; delivered exactly once | PASS |
+| NOTIF-023 | Reliability | Permanent notification failure | Request unaffected; job dead-lettered | PASS |
+| NOTIF-024 | Reliability | Queue itself unavailable | Request still succeeds | PASS |
+
+## Phase J — Idempotency & Hardening
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| IDEMSTORE-001 | Idempotency Store | First sight / repeat while running | new / in_progress | PASS |
+| IDEMSTORE-002 | Idempotency Store | After completion | Same request replays the stored response | PASS |
+| IDEMSTORE-003 | Idempotency Store | Same key, different request | conflict (before and after completion) | PASS |
+| IDEMSTORE-004 | Idempotency Store | Same key, different users | Independent | PASS |
+| IDEMSTORE-005 | Idempotency Store | abandon | Unfinished key can be retried; completed key keeps replaying | PASS |
+| IDEMSTORE-006 | Idempotency Store | Expiry | Results after the TTL; stuck in-progress keys sooner | PASS |
+| IDEMSTORE-007 | Idempotency Store | 20 simultaneous begin calls | Exactly one new, 19 in_progress | PASS |
+| IDEM-001 | Idempotency-Key | Retry with the same key | First response replayed (Idempotent-Replayed: true); one item | PASS |
+| IDEM-002 | Idempotency-Key | Same key, different body | 409 IDEMPOTENCY_KEY_REUSED; nothing created | PASS |
+| IDEM-003 | Idempotency-Key | No key | Behaves as before (two items) | PASS |
+| IDEM-004 | Idempotency-Key | Two users, same key | Independent | PASS |
+| IDEM-005 | Idempotency-Key | Two simultaneous requests, same key | Exactly one item; loser gets 409 IN_PROGRESS or a replay | PASS |
+| IDEM-006 | Idempotency-Key | 400/403 first, then a corrected retry | Failures are not remembered; retry succeeds | PASS |
+| IDEM-007 | Idempotency-Key | Empty, spaces, 256 chars, tab | 400 INVALID_IDEMPOTENCY_KEY | PASS |
+| IDEM-008 | Idempotency-Key | Comments | Posted once | PASS |
+| IDEM-009 | Idempotency-Key | Team creation and member add | Replayed instead of 409 duplicate | PASS |
+| IDEM-010 | Idempotency-Key | Routes that do not use it (lock) | Header ignored | PASS |
+| IDEM-011 | Idempotency-Key | Unauthenticated with a key | 401; key not stored | PASS |
+| IDEM-012 | Idempotency-Key | After 24 hours | Stored result forgotten; new item | PASS |
+| HARD-001 | Requests | Malformed JSON | 400 INVALID_JSON, no parser internals | PASS |
+| HARD-002 | Requests | Unknown route | 404 NOT_FOUND in the standard envelope | PASS |
+| HARD-003 | Requests | 2 MB body | 413 | PASS |
+| HARD-004 | Requests | Security headers | nosniff, frame options and HSTS present | PASS |
+| HARD-005 | Requests | x-request-id | On every response, unique per request | PASS |
+| HARD-006 | Shutdown | app.close() with a queued job | Job finishes first; closing twice is harmless | PASS |
+| HARD-007 | Login throttle | 5 failures | 429 TOO_MANY_LOGIN_ATTEMPTS with Retry-After, even for the right password | PASS |
+| HARD-008 | Login throttle | Unknown email | Same lockout (reveals nothing) | PASS |
+| HARD-009 | Login throttle | Per email, case-insensitive | Other users unaffected | PASS |
+| HARD-010 | Login throttle | Successful login | Clears the failure count | PASS |
+| HARD-011 | Login throttle | After the 15-minute window | Lockout lifts | PASS |
+| HARD-012 | Login throttle | Failures spread over time | Never accumulate | PASS |
+| HARD-013 | Accounts | Disable an account | Existing token rejected immediately (ACCOUNT_DISABLED) | PASS |
+| HARD-014 | Accounts | Demote an admin | Admin rights lost at once | PASS |
+| HARD-015 | Accounts | Signed token for a user that does not exist | 401 INVALID_TOKEN | PASS |
+| HARD-016 | Sessions | Logged-out tokens | Forgotten after they would have expired; no unbounded growth | PASS |
+
+## Phase K — End-to-End Integration
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| INT-001 | Lifecycle | Create team → report → assign → edit → comment → resolve → close | History, search, dashboard and notifications all agree | PASS |
+| INT-002 | Contention | 12 users race for one lock, twice | Exactly one winner each round; only the holder can save | PASS |
+| INT-003 | Consistency | 3 runs of 25 random valid edits | Replaying the history reproduces the item; versions line up | PASS |
+| INT-004 | Access | Outsiders hit every item/team endpoint | All 403; search, dashboard and inbox leak nothing | PASS |
+| INT-005 | Access | Member removed from team while holding a lock | All access cut at once; manager clears the lock | PASS |
+| INT-006 | Envelope | 13 successes and failures | Every response follows the standard envelope; no stack traces | PASS |
+| INT-007 | Load | 25 simultaneous creations | Unique ids/keys; list, dashboard and history consistent | PASS |
+| INT-008 | Jobs | After a full run | No dead-lettered jobs | PASS |
+
+## Web App — Demo Data, Serving and UI Logic
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| SEED-001 | Demo data | Seed summary | 6 users, 4 teams, 14 items | PASS |
+| SEED-002 | Demo data | Demo logins | Work; admin is a real administrator | PASS |
+| SEED-003 | Demo data | Teams per person | Own teams only; admin sees all | PASS |
+| SEED-004 | Demo data | Items | Span every status in use and every priority | PASS |
+| SEED-005 | Demo data | A worked item's history | Genuine created, lock, update, comment events | PASS |
+| SEED-006 | Demo data | Notifications | Delivered without failed jobs | PASS |
+| SEED-007 | Demo data | Locks | None left held | PASS |
+| SEED-008 | Demo data | Dashboard | Has counts, team load and activity | PASS |
+| WEB-001 | Web app | GET / | index.html as text/html, no-cache | PASS |
+| WEB-002 | Web app | .js and .css files | Correct content types | PASS |
+| WEB-003 | Web app | Unknown file | 404 in the standard error format | PASS |
+| WEB-004 | Web app | Path traversal (plain, encoded, nested) | 404; outside file never served | PASS |
+| WEB-005 | Web app | Dotfile | 404 | PASS |
+| WEB-006 | Web app | Directory | 404 | PASS |
+| WEB-007 | Web app | API unaffected | Health works; unknown /api path is a JSON 404 | PASS |
+| WEB-008 | Web app | Malformed percent-encoding | No crash (< 500) | PASS |
+| WEB-009 | Web app | No frontend directory configured | API only; / is 404 | PASS |
+| UILIB-001 | format | esc() | Neutralises markup in text and attributes; null/undefined → empty | PASS |
+| UILIB-002 | format | humanize, initials, shortId | Readable labels; '?' for blank names | PASS |
+| UILIB-003 | format | relativeTime | just now / s / m / h / d ago; bad input → empty | PASS |
+| UILIB-004 | format | formatDuration, excerpt | Compact durations; whitespace-collapsed, ellipsised text | PASS |
+| UILIB-005 | presets | Quick filters | Match the dashboard counters' definitions | PASS |
+| UILIB-006 | presets | buildApiQuery defaults | Sort, page, pageSize defaults applied | PASS |
+| UILIB-007 | presets | Dropdown vs preset | Explicit choice overrides only that field | PASS |
+| UILIB-008 | presets | Blank search, bad sizes | Dropped / fall back to defaults | PASS |
+| UILIB-009 | presets | URL round trip | Defaults omitted; values survive encoding | PASS |
+| UILIB-010 | presets | pageWindow | First, last, neighbours with gaps | PASS |
+| UILIB-011 | permissions | isManagerOf / isAdmin | Managers and admins only | PASS |
+| UILIB-012 | permissions | transitionNeedsManager | Only closing and reopening | PASS |
+| UILIB-013 | permissions | usableTransitions | Hides moves the user would be refused | PASS |
+| UILIB-014 | permissions | roleLabel | Administrator / Team Manager / Team Member / No team yet | PASS |
+| UILIB-015 | diff | changedFields | Only what the draft changed | PASS |
+| UILIB-016 | diff | conflictRows | Flags fields both people changed differently | PASS |
+| UILIB-017 | diff | Field only I changed | Not a collision | PASS |
+| UILIB-018 | diff | theirOnlyChanges | Updates I did not touch | PASS |
+| UILIB-019 | activity wording | Created, comment, lock events | Readable sentences | PASS |
+| UILIB-020 | activity wording | Update with several changes | Readable before/after values (names for owners) | PASS |
+| UILIB-021 | activity wording | Unknown type / missing name | Degrades gracefully | PASS |
+
+### Browser verification (manual, done in the built-in browser against demo data)
+
+These flows were exercised end to end in a real browser; they are not automated.
+
+| Area | What was checked | Result |
+|---|---|---|
+| Sign in | Wrong password message; success; sign out; protected route returns to the page you wanted after login; invalid stored token falls back to login | OK |
+| Sign in | Five wrong passwords show a lockout message with a live countdown | OK |
+| Dashboard | Counters, urgent work, my work, team load, recent activity; matches the API | OK |
+| Work items | Quick filters (counts match), search by text and by key, dropdown filters, sorting, pagination incl. out-of-range page, empty state and "Clear Active Filters" | OK |
+| Create | Validation, creation with a double submit (one item), HTML in the description shown as text | OK |
+| Detail | Edit with lock, save, lock released, history updated | OK |
+| Detail | Version conflict: panel shows both versions; "Keep my changes" saves only my fields | OK |
+| Detail | Another user holds the lock: banner, controls disabled, manager can release | OK |
+| Detail | Status change, reassign (correct team members), comment with injected HTML shown as text | OK |
+| Detail | Reloading mid-edit releases the lock | OK |
+| Errors | 403 "Operational Clearance Denied", 404 "Item Not Located", unknown page | OK |
+| Notifications | Bell count, dropdown, click-through marks read, mark all read | OK |
+| Layout | Phone width: no horizontal page overflow on list, dashboard, detail | OK |
+
+Bugs found and fixed during this pass: views stacking event listeners on a shared container (several dialogs opened for one click), dialogs left in the page after closing, and the dashboard overflowing at phone width.

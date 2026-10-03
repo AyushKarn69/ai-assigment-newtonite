@@ -23,11 +23,15 @@ const PRIORITY_RANK: Record<WorkItemPriority, number> = {
  */
 export class InMemoryWorkItemRepository implements WorkItemRepository {
   private items: Map<string, WorkItem> = new Map();
+  private lastNumber = 1000;
 
   async create(input: CreateWorkItemInput): Promise<WorkItem> {
     const now = new Date();
+    const number = ++this.lastNumber;
     const item: WorkItem = {
       id: randomUUID(),
+      number,
+      key: `NW-${number}`,
       ...input,
       status: WorkItemStatus.OPEN,
       version: 1,
@@ -64,13 +68,19 @@ export class InMemoryWorkItemRepository implements WorkItemRepository {
   }
 
   async query(query: WorkItemQuery): Promise<WorkItemPage> {
+    const needle = query.search?.toLowerCase();
     const matches = Array.from(this.items.values()).filter(
       (item) =>
         (query.teamIds === undefined || query.teamIds.includes(item.teamId)) &&
-        (query.status === undefined || item.status === query.status) &&
-        (query.type === undefined || item.type === query.type) &&
-        (query.priority === undefined || item.priority === query.priority) &&
-        (query.assigneeId === undefined || item.assigneeId === query.assigneeId),
+        (query.status === undefined || query.status.includes(item.status)) &&
+        (query.type === undefined || query.type.includes(item.type)) &&
+        (query.priority === undefined || query.priority.includes(item.priority)) &&
+        (query.assigneeId === undefined || item.assigneeId === query.assigneeId) &&
+        (query.createdBy === undefined || item.createdBy === query.createdBy) &&
+        (needle === undefined ||
+          item.title.toLowerCase().includes(needle) ||
+          item.description.toLowerCase().includes(needle) ||
+          item.key.toLowerCase().includes(needle)),
     );
 
     const direction = query.sortOrder === 'asc' ? 1 : -1;

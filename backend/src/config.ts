@@ -19,6 +19,14 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('24h'),
 
   LOCK_TIMEOUT_MINUTES: z.coerce.number().int().positive().default(30),
+
+  /** Fill the in-memory stores with demo users, teams and work items at startup. */
+  SEED_DEMO_DATA: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  /** Directory of the web app to serve; defaults to ../frontend next to the backend. */
+  FRONTEND_DIR: z.string().optional(),
 });
 
 function loadConfig() {
@@ -65,6 +73,8 @@ export function createTestConfig(overrides: Partial<Config> = {}): Config {
     JWT_SECRET: 'test-secret-minimum-16-chars',
     JWT_EXPIRES_IN: '1h',
     LOCK_TIMEOUT_MINUTES: 30,
+    SEED_DEMO_DATA: false,
+    FRONTEND_DIR: undefined,
   };
 
   return Object.freeze({ ...defaults, ...overrides });

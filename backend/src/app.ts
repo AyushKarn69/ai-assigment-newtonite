@@ -9,10 +9,19 @@ import { registerAuthRoutes } from './modules/auth/index';
 import { registerTeamRoutes } from './modules/teams/index';
 import { registerWorkItemRoutes, registerWorkItemLockRoutes } from './modules/work-items/index';
 import { registerActivityRoutes } from './modules/activity/index';
+import { registerCommentRoutes } from './modules/comments/index';
+import { registerDashboardRoutes } from './modules/dashboard/index';
+import { registerNotificationRoutes } from './modules/notifications/index';
+import { registerIdempotency } from './shared/idempotency/index';
+import { registerFrontend } from './frontend';
+import { BadRequestError } from './shared/errors/index';
+import { errorResponse } from './shared/types/index';
 
 export interface AppDependencies {
   config?: Config;
   container?: AppContainer;
+  /** Directory of the web app to serve at `/`. Omit to serve the API only. */
+  frontendDir?: string;
 }
 
 /**
@@ -44,11 +53,66 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   });
 
   await app.register(helmet, {
-    contentSecurityPolicy: config.NODE_ENV === 'production' ? undefined : false,
+    // The web app uses the Tailwind CDN, Google Fonts and inline styles/scripts,
+    // so production needs those allowed explicitly (see HANDBOOK, "Web app").
+    contentSecurityPolicy:
+      config.NODE_ENV === 'production'
+        ? {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://cdn.tailwindcss.com'],
+              styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+              fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+              imgSrc: ["'self'", 'data:'],
+              connectSrc: ["'self'"],
+              objectSrc: ["'none'"],
+              baseUri: ["'self'"],
+              frameAncestors: ["'none'"],
+            },
+          }
+        : false,
+  });
+
+  // --- Background jobs: log failures, and finish queued work on shutdown ---
+  container.jobQueue.setLogger(app.log);
+  app.addHook('onClose', async () => {
+    await container.jobQueue.close();
   });
 
   // --- Global error handler ---
   app.setErrorHandler(globalErrorHandler);
+  app.setNotFoundHandler((request, reply) => {
+    reply
+      .status(404)
+      .send(errorResponse('NOT_FOUND', `Route ${request.method} ${request.url} not found`));
+  });
+
+  // Every response carries the request id so a problem report can be traced in the logs
+  app.addHook('onSend', async (request, reply, payload) => {
+    reply.header('x-request-id', request.id);
+    return payload;
+  });
+
+  // --- Idempotency-Key support on the create endpoints ---
+  registerIdempotency(app, {
+    store: container.idempotencyStore,
+    clock: container.clock,
+    resolveUserId: async (request) => {
+      const header = request.headers.authorization;
+      if (!header?.startsWith('Bearer ')) return null;
+      try {
+        return (await container.authService.verifyToken(header.slice(7))).id;
+      } catch {
+        return null;
+      }
+    },
+    routes: [
+      '/api/work-items',
+      '/api/work-items/:id/comments',
+      '/api/teams',
+      '/api/teams/:id/members',
+    ],
+  });
 
   // --- Health / readiness ---
   app.get('/api/health', async () => {
@@ -67,11 +131,16 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   });
 
   // --- Module routes ---
-  registerAuthRoutes(app, container.authService);
+  registerAuthRoutes(app, container.authService, container.userService);
   registerTeamRoutes(app, container.teamService, container.authService);
   registerWorkItemRoutes(app, container.workItemService, container.authService);
   registerWorkItemLockRoutes(app, container.workItemLockService, container.authService);
   registerActivityRoutes(app, container.activityService, container.authService);
+  registerCommentRoutes(app, container.commentService, container.authService);
+  registerDashboardRoutes(app, container.dashboardService, container.authService);
+  registerNotificationRoutes(app, container.notificationService, container.authService);
+
+  if (deps.frontendDir) registerFrontend(app, deps.frontendDir);
 
   // --- Content type parser for JSON ---
   app.addContentTypeParser(
@@ -81,8 +150,8 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
       try {
         const json = body ? JSON.parse(body as string) : undefined;
         done(null, json);
-      } catch (err) {
-        done(err as Error, undefined);
+      } catch {
+        done(new BadRequestError('Request body is not valid JSON', 'INVALID_JSON'), undefined);
       }
     },
   );

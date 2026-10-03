@@ -1,0 +1,27 @@
+html, body { margin: 0; padding: 0; }
+body { overscroll-behavior: none; }
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}
+.material-symbols-outlined.filled { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+/* Warm, unobtrusive scrollbars */
+* { scrollbar-width: thin; scrollbar-color: #d8d0c8 transparent; }
+
+/* Loading skeletons */
+@keyframes shimmer { 0% { opacity: .55; } 50% { opacity: 1; } 100% { opacity: .55; } }
+.skeleton { background: #ece6dc; border-radius: 6px; animation: shimmer 1.4s ease-in-out infinite; }
+
+/* Keyboard focus that matches the design system */
+:focus-visible { outline: 2px solid #c2652a; outline-offset: 2px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
+
+/* Preserve line breaks in user-written text (content is always escaped before insertion) */
+.prewrap { white-space: pre-wrap; word-break: break-word; }
+
+.toast-enter { animation: toast-in .18s ease-out; }
+@keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+dialog::backdrop { background: rgba(58, 48, 42, .35); backdrop-filter: blur(2px); }

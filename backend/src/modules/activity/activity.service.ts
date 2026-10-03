@@ -16,6 +16,14 @@ export interface ActivityRecorder {
   record(input: NewActivity): Promise<void>;
 }
 
+/**
+ * Told about every recorded entry, after it has been stored. Used to hand entries
+ * to background processing (notifications). Failures here never fail the request.
+ */
+export interface ActivityPublisher {
+  publish(entry: ActivityEntry): Promise<void>;
+}
+
 /** Minimal views of other modules, satisfied structurally (keeps module dependencies one-way). */
 export interface WorkItemLookup {
   findById(id: string): Promise<{ teamId: string } | null>;
@@ -42,10 +50,17 @@ export class ActivityService implements ActivityRecorder {
     private readonly authorization: AuthorizationService,
     private readonly users: UserLookup,
     private readonly clock: Clock,
+    private readonly publisher?: ActivityPublisher,
   ) {}
 
   async record(input: NewActivity): Promise<void> {
-    await this.repo.append({ ...input, createdAt: this.clock.now() });
+    const entry = await this.repo.append({ ...input, createdAt: this.clock.now() });
+    try {
+      await this.publisher?.publish(entry);
+    } catch {
+      // The change and its history entry are already stored; losing the
+      // follow-up (e.g. a notification) must not fail the user's request.
+    }
   }
 
   /** Team member (or admin). */

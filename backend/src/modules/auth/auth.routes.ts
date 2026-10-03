@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthService } from './auth.service';
+import { UserService } from '../users/user.service';
 import { createAuthHook, getAuthenticatedUser } from './auth.middleware';
 import { validateBody } from '../../shared/middleware/index';
 import { successResponse } from '../../shared/types/index';
@@ -13,6 +14,7 @@ const loginSchema = z.object({
 export function registerAuthRoutes(
   app: FastifyInstance,
   authService: AuthService,
+  userService: UserService,
 ): void {
   const authHook = createAuthHook(authService);
 
@@ -33,7 +35,7 @@ export function registerAuthRoutes(
   app.get('/api/users/me', {
     preHandler: authHook,
   }, async (request, reply) => {
-    const user = getAuthenticatedUser(request);
-    return reply.status(200).send(successResponse(user));
+    const { id } = getAuthenticatedUser(request);
+    return reply.status(200).send(successResponse(await userService.findById(id)));
   });
 }

@@ -9,6 +9,8 @@ import {
   WorkItemStatus,
   WorkItemType,
 } from './work-item.entity';
+import { allowedTransitions } from './work-item.workflow';
+import { WorkItem } from './work-item.entity';
 import { validateBody, validateParams, validateQuery } from '../../shared/middleware/index';
 import { buildPaginationMeta, successResponse } from '../../shared/types/index';
 import { paginationSchema } from '../../shared/validation/index';
@@ -38,14 +40,42 @@ const updateBody = z
     message: 'Provide at least one field to update',
   });
 
+/** Comma-separated list of enum values, e.g. `status=OPEN,BLOCKED`. */
+const csvOf = <T extends z.ZodType<string, string>>(item: T) =>
+  z
+    .string()
+    .transform((value) =>
+      value
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(item).min(1))
+    .optional();
+
 const listQuery = paginationSchema.extend({
   teamId: z.string().uuid().optional(),
-  status: z.enum(WorkItemStatus).optional(),
-  type: z.enum(WorkItemType).optional(),
-  priority: z.enum(WorkItemPriority).optional(),
+  status: csvOf(z.enum(WorkItemStatus)),
+  type: csvOf(z.enum(WorkItemType)),
+  priority: csvOf(z.enum(WorkItemPriority)),
+  /** 'me', 'unassigned' or a user id. `assigneeId` is kept as an alias for a user id. */
+  assignee: z.union([z.literal('me'), z.literal('unassigned'), z.string().uuid()]).optional(),
   assigneeId: z.string().uuid().optional(),
+  createdBy: z.string().uuid().optional(),
+  search: z
+    .string()
+    .trim()
+    .max(200)
+    .optional()
+    .transform((value) => value || undefined),
   sortBy: z.enum(WORK_ITEM_SORT_FIELDS).default('updatedAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+/** Single-item responses include which statuses the item may move to next. */
+const withTransitions = (item: WorkItem) => ({
+  ...item,
+  allowedTransitions: allowedTransitions(item.status),
 });
 
 export function registerWorkItemRoutes(
@@ -58,7 +88,11 @@ export function registerWorkItemRoutes(
   app.get('/api/work-items', { preHandler }, async (request, reply) => {
     const actor = getAuthenticatedUser(request);
     const query = validateQuery(request, listQuery);
-    const { items, totalCount } = await workItemService.list(actor, query);
+    const { assigneeId, ...filters } = query;
+    const { items, totalCount } = await workItemService.list(actor, {
+      ...filters,
+      assignee: filters.assignee ?? assigneeId,
+    });
     return reply
       .status(200)
       .send(successResponse(items, buildPaginationMeta(query.page, query.pageSize, totalCount)));
@@ -68,19 +102,23 @@ export function registerWorkItemRoutes(
     const actor = getAuthenticatedUser(request);
     const body = validateBody(request, createBody);
     const item = await workItemService.create(actor, body);
-    return reply.status(201).send(successResponse(item));
+    return reply.status(201).send(successResponse(withTransitions(item)));
   });
 
   app.get('/api/work-items/:id', { preHandler }, async (request, reply) => {
     const actor = getAuthenticatedUser(request);
     const { id } = validateParams(request, idParams);
-    return reply.status(200).send(successResponse(await workItemService.getById(actor, id)));
+    return reply
+      .status(200)
+      .send(successResponse(withTransitions(await workItemService.getById(actor, id))));
   });
 
   app.patch('/api/work-items/:id', { preHandler }, async (request, reply) => {
     const actor = getAuthenticatedUser(request);
     const { id } = validateParams(request, idParams);
     const body = validateBody(request, updateBody);
-    return reply.status(200).send(successResponse(await workItemService.update(actor, id, body)));
+    return reply
+      .status(200)
+      .send(successResponse(withTransitions(await workItemService.update(actor, id, body))));
   });
 }

@@ -1,6 +1,6 @@
 import { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
-import { AppError, LockedError } from '../errors/index';
+import { AppError, LockedError, TooManyRequestsError } from '../errors/index';
 import { errorResponse } from '../types/index';
 
 /**
@@ -41,6 +41,10 @@ export function globalErrorHandler(
     // Attach lock info if present
     if (error instanceof LockedError && error.lockInfo) {
       (response.error as unknown as Record<string, unknown>).lockInfo = error.lockInfo;
+    }
+
+    if (error instanceof TooManyRequestsError && error.retryAfterSeconds !== undefined) {
+      reply.header('retry-after', String(error.retryAfterSeconds));
     }
 
     reply.status(error.statusCode).send(response);

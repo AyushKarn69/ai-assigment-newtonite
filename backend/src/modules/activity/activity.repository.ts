@@ -51,6 +51,16 @@ export class InMemoryActivityRepository implements ActivityRepository {
     };
   }
 
+  async listRecent(workItemIds: string[], limit: number): Promise<ActivityEntry[]> {
+    const allowed = new Set(workItemIds);
+    const recent: ActivityEntry[] = [];
+    // Entries are stored in the order they happened, so walk backwards.
+    for (let i = this.entries.length - 1; i >= 0 && recent.length < limit; i--) {
+      if (allowed.has(this.entries[i].workItemId)) recent.push(clone(this.entries[i]));
+    }
+    return recent;
+  }
+
   /** Test helper — reset all data */
   clear(): void {
     this.entries = [];

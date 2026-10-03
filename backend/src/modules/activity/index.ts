@@ -11,6 +11,7 @@ export { InMemoryActivityRepository } from './activity.repository';
 export {
   ActivityService,
   ActivityRecorder,
+  ActivityPublisher,
   ActivityEntryView,
   ActivityViewPage,
   ListActivityCommand,

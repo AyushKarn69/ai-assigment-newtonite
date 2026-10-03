@@ -1,5 +1,8 @@
 import { getConfig } from './config';
+import path from 'node:path';
 import { buildApp } from './app';
+import { createContainer } from './container';
+import { DEMO_PASSWORD, seedDemoData } from './seed';
 import { createModuleLogger } from './shared/utils/logger';
 
 const logger = createModuleLogger('server');
@@ -7,7 +10,18 @@ const logger = createModuleLogger('server');
 async function main(): Promise<void> {
   const config = getConfig();
 
-  const app = await buildApp({ config });
+  const container = createContainer(config);
+  if (config.SEED_DEMO_DATA) {
+    const seeded = await seedDemoData(container);
+    logger.info(
+      { ...seeded, accounts: 'ada@newtonite.test (admin), sarah@, liam@, elena@, carlos@, priya@newtonite.test' },
+      `Demo data loaded — every demo account uses the password "${DEMO_PASSWORD}"`,
+    );
+  }
+
+  // backend/src (tsx) and backend/dist (node) are both two levels below the repo root
+  const frontendDir = config.FRONTEND_DIR ?? path.resolve(__dirname, '../../frontend');
+  const app = await buildApp({ config, container, frontendDir });
 
   // --- Graceful shutdown ---
   const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];

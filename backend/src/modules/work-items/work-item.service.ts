@@ -43,10 +43,13 @@ export interface UpdateWorkItemCommand {
 
 export interface ListWorkItemsCommand {
   teamId?: string;
-  status?: WorkItemStatus;
-  type?: WorkItemType;
-  priority?: WorkItemPriority;
-  assigneeId?: string;
+  status?: WorkItemStatus[];
+  type?: WorkItemType[];
+  priority?: WorkItemPriority[];
+  /** 'me', 'unassigned', or a user id. */
+  assignee?: string;
+  createdBy?: string;
+  search?: string;
   sortBy: WorkItemQuery['sortBy'];
   sortOrder: WorkItemQuery['sortOrder'];
   page: number;
@@ -104,7 +107,7 @@ export class WorkItemService {
 
   /** Admin sees everything; everyone else only items of teams they belong to. */
   async list(actor: AuthenticatedUser, command: ListWorkItemsCommand): Promise<WorkItemPage> {
-    const { teamId, ...rest } = command;
+    const { teamId, assignee, ...rest } = command;
     let teamIds: string[] | undefined;
 
     if (teamId !== undefined) {
@@ -116,7 +119,12 @@ export class WorkItemService {
       teamIds = memberships.map((m) => m.teamId);
     }
 
-    return this.workItemRepo.query({ ...rest, teamIds });
+    let assigneeId: string | null | undefined;
+    if (assignee === 'me') assigneeId = actor.id;
+    else if (assignee === 'unassigned') assigneeId = null;
+    else assigneeId = assignee;
+
+    return this.workItemRepo.query({ ...rest, assigneeId, teamIds });
   }
 
   /** Team member (or admin). */

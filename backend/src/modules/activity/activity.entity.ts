@@ -5,6 +5,7 @@ export enum ActivityType {
   LOCK_RELEASED = 'LOCK_RELEASED',
   /** A team manager or admin released someone else's lock. */
   LOCK_FORCE_RELEASED = 'LOCK_FORCE_RELEASED',
+  COMMENT_ADDED = 'COMMENT_ADDED',
 }
 
 export interface FieldChange {
@@ -62,4 +63,6 @@ export interface ActivityPage {
 export interface ActivityRepository {
   append(input: NewActivity & { createdAt: Date }): Promise<ActivityEntry>;
   list(query: ActivityQuery): Promise<ActivityPage>;
+  /** Newest entries across the given work items. */
+  listRecent(workItemIds: string[], limit: number): Promise<ActivityEntry[]>;
 }

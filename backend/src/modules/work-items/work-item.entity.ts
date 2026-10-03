@@ -25,6 +25,9 @@ export enum WorkItemPriority {
 
 export interface WorkItem {
   id: string;
+  /** Sequential number (1001, 1002, ...) and its display key ("NW-1001"). */
+  number: number;
+  key: string;
   title: string;
   description: string;
   type: WorkItemType;
@@ -60,10 +63,15 @@ export type WorkItemSortField = (typeof WORK_ITEM_SORT_FIELDS)[number];
 export interface WorkItemQuery {
   /** Restrict to these teams; undefined means no team restriction (admin). */
   teamIds?: string[];
-  status?: WorkItemStatus;
-  type?: WorkItemType;
-  priority?: WorkItemPriority;
-  assigneeId?: string;
+  /** Any of these (OR within a field, AND across fields). */
+  status?: WorkItemStatus[];
+  type?: WorkItemType[];
+  priority?: WorkItemPriority[];
+  /** A user id, or null for unassigned. */
+  assigneeId?: string | null;
+  createdBy?: string;
+  /** Case-insensitive substring match on title, description and key. */
+  search?: string;
   sortBy: WorkItemSortField;
   sortOrder: 'asc' | 'desc';
   page: number;
