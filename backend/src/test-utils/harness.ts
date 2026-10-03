@@ -5,6 +5,7 @@ import { AppContainer, createContainer } from '../container';
 import { TeamRole } from '../shared/types/auth';
 import { JobQueue } from '../shared/queue/index';
 import { Clock } from '../shared/utils/clock';
+import { PrismaClient } from '../shared/db/prisma';
 import { dbTestsEnabled, resetDatabase } from './db';
 
 export const PASSWORD = 'a-long-test-password';
@@ -38,11 +39,11 @@ export interface Harness {
  *  olga (beta MANAGER) · nina (no team)
  */
 export async function createHarness(
-  options: { config?: Partial<Config>; clock?: Clock; jobQueue?: JobQueue } = {},
+  options: { config?: Partial<Config>; clock?: Clock; jobQueue?: JobQueue; prisma?: PrismaClient | null } = {},
 ): Promise<Harness> {
   if (dbTestsEnabled()) await resetDatabase(); // every harness starts from empty tables
   const config = createTestConfig(options.config);
-  const container = createContainer(config, { clock: options.clock, jobQueue: options.jobQueue });
+  const container = createContainer(config, { clock: options.clock, jobQueue: options.jobQueue, prisma: options.prisma });
 
   const ids: Record<string, string> = {};
   const people: Array<[string, 'ADMIN' | 'USER']> = [

@@ -427,3 +427,33 @@ These flows were exercised end to end in a real browser; they are not automated.
 | Layout | Phone width: no horizontal page overflow on list, dashboard, detail | OK |
 
 Bugs found and fixed during this pass: views stacking event listeners on a shared container (several dialogs opened for one click), dialogs left in the page after closing, and the dashboard overflowing at phone width.
+
+## PostgreSQL / Prisma — database integration
+
+These run against a real PostgreSQL database (`TEST_DATABASE_URL`, see `.env.example`) in `src/db/postgres.integration.test.ts`
+and are skipped when it is not configured. `npm run test:db` additionally runs the **entire** suite (all phases) against
+PostgreSQL instead of memory; both modes pass (366 tests).
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| DB-PERSIST-001 | Persistence | Create item, edit, comment, hold a lock; then open a brand-new connection and container | Item, history (seq 1-4), comments, team, membership, the lock (same token), login and notifications are all still there | PASS |
+| DB-PERSIST-002 | Constraints | Duplicate user email, team name (any case), activity sequence, membership | Rejected by the database (unique violation) | PASS |
+| DB-PERSIST-002 | Constraints | Work item in unknown team, comment/lock on unknown item | Rejected by the database (foreign key violation) | PASS |
+| DB-PERSIST-003 | Numbering | 15 simultaneous creations | 15 distinct numbers; key = NW-<number> | PASS |
+| DB-PERSIST-004 | Cascade | Delete a work item | Its lock, history and comments go with it | PASS |
+| DB-ATOM-001 | Transaction | A save through the API | Item change and UPDATED entry stored together; entry holds the before/after values; sequence is the next number | PASS |
+| DB-ATOM-002 | Transaction | History entry cannot be written (foreign key failure) | Whole transaction rolled back: item unchanged, no entry, sequence number not consumed | PASS |
+| DB-ATOM-003 | Transaction | Building the history entry throws | Nothing stored | PASS |
+| DB-ATOM-004 | Transaction | Create with a failing history entry; create normally | No work item left behind / item and CREATED entry (seq 1) both stored | PASS |
+| DB-ATOM-005 | Invariant | Lock, two saves, comment, release, lock, force-release | Entries = the item's counter; sequences 1..n without gaps; expected order | PASS |
+| DB-ATOM-006 | Ordering | 25 simultaneous appends | Distinct, gap-free sequence numbers | PASS |
+| DB-ATOM-007 | Concurrency | 10 simultaneous saves by the lock holder | All land: no lost updates, 10 distinct sequences — protected by the lock, not by comparing versions | PASS |
+| DB-LOCK-001 | Lock | 25 users acquire at the same instant | Exactly one winner; one lock row; losers are told the winner | PASS |
+| DB-LOCK-002 | Lock | 4 users race through the API | One 200, three 423 naming the holder | PASS |
+| DB-LOCK-003 | Lock | Renew, heartbeat, expiry | Renewal keeps token and start time; heartbeat at +20 min extends the 30-minute window to +50; gone exactly at expiry; times round-trip exactly | PASS |
+| DB-LOCK-004 | Lock | Extend/release by non-holder, extend after expiry | Refused; only the live holder can extend or release | PASS |
+| DB-LOCK-005 | Lock | Acquire while held (+29), after expiry (+30) | Refused, then the expired lease is replaced with a new token and start time; 12 simultaneous takeovers give one winner | PASS |
+| DB-LOCK-006 | Stale lock | Write with a forged token, wrong user, expired lease, taken-over lease, force-released lease | All rejected (LOCK_LOST); item, version, sequence and history unchanged; a live proof is accepted | PASS |
+| DB-LOCK-007 | Stale lock | Lease lost between the service's check and the write | Caught inside the transaction; the new holder's write succeeds | PASS |
+| DB-LOCK-008 | Stale lock | API: wrong/right X-Lock-Token, 31 minutes idle, takeover | 409 LOCK_TOKEN_MISMATCH / 200; 409 LOCK_REQUIRED after expiry; old holder gets 423 and cannot revive; token hidden from non-holders | PASS |
+| DB-LOCK-009 | Heartbeat | Four heartbeats 20 minutes apart (80 minutes total), then save | Session stays alive; save succeeds | PASS |
