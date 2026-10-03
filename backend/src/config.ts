@@ -25,6 +25,13 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  /** Let people create their own account (always a plain user with no team). */
+  ALLOW_REGISTRATION: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  /** Registrations accepted per client address per hour. */
+  REGISTRATION_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(10),
   /** Directory of the web app to serve; defaults to ../frontend next to the backend. */
   FRONTEND_DIR: z.string().optional(),
 });
@@ -75,6 +82,8 @@ export function createTestConfig(overrides: Partial<Config> = {}): Config {
     JWT_EXPIRES_IN: '1h',
     LOCK_TIMEOUT_MINUTES: 30,
     SEED_DEMO_DATA: false,
+    ALLOW_REGISTRATION: true,
+    REGISTRATION_LIMIT_PER_HOUR: 10,
     FRONTEND_DIR: undefined,
   };
 

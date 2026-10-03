@@ -6,6 +6,9 @@ export interface LoginThrottleOptions {
   maxFailures?: number;
   /** Sliding window length. Default 15 minutes. */
   windowMs?: number;
+  /** Error text and code when locked out (defaults describe failed logins). */
+  message?: string;
+  code?: string;
 }
 
 const SWEEP_THRESHOLD = 10_000;
@@ -22,6 +25,8 @@ const SWEEP_THRESHOLD = 10_000;
 export class LoginThrottle {
   private readonly maxFailures: number;
   private readonly windowMs: number;
+  private readonly message: string;
+  private readonly code: string;
   private failures = new Map<string, number[]>(); // email -> failure timestamps (ms)
 
   constructor(
@@ -30,6 +35,8 @@ export class LoginThrottle {
   ) {
     this.maxFailures = options.maxFailures ?? 5;
     this.windowMs = options.windowMs ?? 15 * 60 * 1000;
+    this.message = options.message ?? 'Too many failed login attempts. Try again later.';
+    this.code = options.code ?? 'TOO_MANY_LOGIN_ATTEMPTS';
   }
 
   /** Throws TooManyRequestsError if this email is currently locked out. */
@@ -40,8 +47,8 @@ export class LoginThrottle {
     const unlocksAt = recent[recent.length - this.maxFailures] + this.windowMs;
     const retryAfterSeconds = Math.max(1, Math.ceil((unlocksAt - this.clock.now().getTime()) / 1000));
     throw new TooManyRequestsError(
-      'Too many failed login attempts. Try again later.',
-      'TOO_MANY_LOGIN_ATTEMPTS',
+      this.message,
+      this.code,
       retryAfterSeconds,
     );
   }

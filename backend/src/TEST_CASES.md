@@ -457,3 +457,35 @@ PostgreSQL instead of memory; both modes pass (366 tests).
 | DB-LOCK-007 | Stale lock | Lease lost between the service's check and the write | Caught inside the transaction; the new holder's write succeeds | PASS |
 | DB-LOCK-008 | Stale lock | API: wrong/right X-Lock-Token, 31 minutes idle, takeover | 409 LOCK_TOKEN_MISMATCH / 200; 409 LOCK_REQUIRED after expiry; old holder gets 423 and cannot revive; token hidden from non-holders | PASS |
 | DB-LOCK-009 | Heartbeat | Four heartbeats 20 minutes apart (80 minutes total), then save | Session stays alive; save succeeds | PASS |
+
+## Registration (self-service sign-up)
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| REG-001 | Register | Valid name, email, password | 201; account created with role USER; signed in at once (token works on /users/me); no password data in the response | PASS |
+| REG-002 | Register | Body also contains role=ADMIN, isActive, id | Ignored: still a plain user; admin-only actions refused (403) | PASS |
+| REG-003 | Register | Email with spaces/capitals; padded name | Stored trimmed, email lower-case | PASS |
+| REG-004 | Register | Email already registered (any case, or a seeded user) | 409 EMAIL_ALREADY_EXISTS | PASS |
+| REG-005 | Register | 5 simultaneous sign-ups with the same email | Exactly one account (201), four 409 | PASS |
+| REG-006 | Register | Bad email, 7-char / 73-byte / multi-byte over-limit password, blank or long name, missing or non-string fields | 400 VALIDATION_ERROR each; nothing created; 8 and 72 character passwords accepted | PASS |
+| REG-007 | Register | Sign in afterwards | Right password works (email any case); wrong password 401 | PASS |
+| REG-008 | Register | Stored password | Only a bcrypt hash | PASS |
+| REG-009 | Register | New account's view of the system | No teams, empty lists, zero dashboard; others' items 403; cannot create items | PASS |
+| REG-010 | Team | Manager adds the new person by email | 201; person now sees the team and can create work | PASS |
+| REG-011 | Team | Add by email: unknown email, duplicate, userId+email, neither, bad email; plain member asking | 404 USER_NOT_FOUND; 409 ALREADY_TEAM_MEMBER; 400; member gets 403 before any lookup (emails cannot be probed); userId still works | PASS |
+| REG-012 | Limits | More sign-ups than the per-address limit in an hour | 429 TOO_MANY_REGISTRATIONS with Retry-After; nothing created; allowed again after the hour | PASS |
+| REG-013 | Switch | ALLOW_REGISTRATION=false | 403 REGISTRATION_DISABLED; nothing created | PASS |
+| REG-014 | Session | Sign out after registering | Token stops working | PASS |
+| UILIB-022 | sign-up form | Valid form (padded name and email) | No errors | PASS |
+| UILIB-023 | sign-up form | Empty form; long name; bad emails | Each field reports its own problem | PASS |
+| UILIB-024 | sign-up form | Password at 7 / 72 / 73 characters; 37 two-byte characters | Mirrors the server: 8 characters minimum, 72 bytes maximum | PASS |
+| UILIB-025 | sign-up form | Confirmation differs; password already invalid | 'Do not match' only once the password itself is fine | PASS |
+| UILIB-026 | sign-up form | Password strength hint | Increases with length and variety; never blocks sign-up | PASS |
+
+### Browser verification (manual)
+
+| Area | What was checked | Result |
+|---|---|---|
+| Sign-up form | Empty form, short password, mismatched confirmation, password strength hint, email already registered (with link to sign in) | OK |
+| Sign-up | A real registration signs the person in and opens the dashboard with a welcome notice that shows their email | OK |
+| Onboarding | After a manager adds them by email, the welcome notice disappears and the team's work shows | OK |

@@ -1,6 +1,7 @@
 // App entry: session bootstrap and hash-based routing.
 //
 //   #/login                 sign in
+//   #/register              create an account
 //   #/dashboard             operational command
 //   #/work-items[?filters]  list
 //   #/work-items/:id        detail
@@ -13,6 +14,7 @@ import { mountDashboard } from './views/dashboard.js';
 import { mountDetail } from './views/detail.js';
 import { mountShell } from './views/layout.js';
 import { mountLogin } from './views/login.js';
+import { mountRegister } from './views/register.js';
 import { openNewItemModal } from './views/newItem.js';
 import { mountWorkItems } from './views/workItems.js';
 
@@ -34,6 +36,16 @@ function teardownShell() {
   shell = null;
 }
 
+/** After signing in or creating an account: load who we are, then go where we were headed. */
+async function afterSignIn() {
+  await loadSession();
+  const leavesAuthScreens = returnTo && !returnTo.startsWith('#/login') && !returnTo.startsWith('#/register');
+  const target = leavesAuthScreens ? returnTo : '#/dashboard';
+  returnTo = null;
+  if (location.hash === target) route();
+  else location.hash = target;
+}
+
 function showLogin() {
   leaveView?.();
   leaveView = null;
@@ -41,16 +53,15 @@ function showLogin() {
   document.title = 'Sign in · Newtonite Ops';
   const message = notice;
   notice = null;
-  leaveView = mountLogin(root, {
-    notice: message,
-    onSignedIn: async () => {
-      await loadSession();
-      const target = returnTo && !returnTo.startsWith('#/login') ? returnTo : '#/dashboard';
-      returnTo = null;
-      if (location.hash === target) route();
-      else location.hash = target;
-    },
-  });
+  leaveView = mountLogin(root, { notice: message, onSignedIn: afterSignIn });
+}
+
+function showRegister() {
+  leaveView?.();
+  leaveView = null;
+  teardownShell();
+  document.title = 'Create account · Newtonite Ops';
+  leaveView = mountRegister(root, { onSignedIn: afterSignIn });
 }
 
 function signOutLocally(message) {
@@ -86,6 +97,10 @@ function route() {
   leaveView = null;
 
   if (!state.user) {
+    if (location.hash.startsWith('#/register')) {
+      showRegister();
+      return;
+    }
     if (!location.hash.startsWith('#/login')) {
       returnTo = location.hash && location.hash !== '#/' ? location.hash : null;
       history.replaceState(null, '', '#/login');

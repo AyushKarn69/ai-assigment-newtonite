@@ -113,6 +113,23 @@ export class TeamService {
     return (await this.toMemberView(member))!;
   }
 
+  /**
+   * Admin or team manager adds someone by email address. The permission check comes first,
+   * so only managers can learn whether an email is registered.
+   */
+  async addMemberByEmail(
+    actor: AuthenticatedUser,
+    teamId: string,
+    email: string,
+    role: TeamRole,
+  ): Promise<TeamMemberView> {
+    await this.requireTeam(teamId);
+    await this.authorization.assertTeamManager(actor, teamId);
+    const user = await this.userService.findByEmail(email);
+    if (!user) throw new NotFoundError('No user is registered with that email', 'USER_NOT_FOUND');
+    return this.addMember(actor, teamId, user.id, role);
+  }
+
   /** Admin or team manager. A team must always keep at least one manager. */
   async changeMemberRole(
     actor: AuthenticatedUser,

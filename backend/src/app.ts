@@ -5,7 +5,7 @@ import { Config, getConfig } from './config';
 import { globalErrorHandler } from './shared/middleware/error-handler';
 import { successResponse } from './shared/types/index';
 import { createContainer, AppContainer } from './container';
-import { registerAuthRoutes } from './modules/auth/index';
+import { LoginThrottle, registerAuthRoutes } from './modules/auth/index';
 import { registerTeamRoutes } from './modules/teams/index';
 import { registerWorkItemRoutes, registerWorkItemLockRoutes } from './modules/work-items/index';
 import { registerActivityRoutes } from './modules/activity/index';
@@ -131,7 +131,15 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   });
 
   // --- Module routes ---
-  registerAuthRoutes(app, container.authService, container.userService);
+  registerAuthRoutes(app, container.authService, container.userService, {
+    allowRegistration: config.ALLOW_REGISTRATION,
+    registrationThrottle: new LoginThrottle(container.clock, {
+      maxFailures: config.REGISTRATION_LIMIT_PER_HOUR,
+      windowMs: 60 * 60 * 1000,
+      message: 'Too many sign-ups from this address. Try again later.',
+      code: 'TOO_MANY_REGISTRATIONS',
+    }),
+  });
   registerTeamRoutes(app, container.teamService, container.authService);
   registerWorkItemRoutes(app, container.workItemService, container.authService);
   registerWorkItemLockRoutes(app, container.workItemLockService, container.authService);

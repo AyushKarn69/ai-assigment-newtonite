@@ -16,10 +16,15 @@ const createTeamBody = z.object({
   managerId: z.string().uuid().optional(),
 });
 
-const addMemberBody = z.object({
-  userId: z.string().uuid(),
-  role: z.nativeEnum(TeamRole).default(TeamRole.MEMBER),
-});
+const addMemberBody = z
+  .object({
+    userId: z.string().uuid().optional(),
+    email: z.string().trim().email().optional(),
+    role: z.nativeEnum(TeamRole).default(TeamRole.MEMBER),
+  })
+  .refine((body) => (body.userId === undefined) !== (body.email === undefined), {
+    message: 'Provide either userId or email',
+  });
 
 const changeRoleBody = z.object({
   role: z.nativeEnum(TeamRole),
@@ -64,7 +69,9 @@ export function registerTeamRoutes(
     const actor = getAuthenticatedUser(request);
     const { id } = validateParams(request, teamParams);
     const body = validateBody(request, addMemberBody);
-    const member = await teamService.addMember(actor, id, body.userId, body.role);
+    const member = body.email
+      ? await teamService.addMemberByEmail(actor, id, body.email, body.role)
+      : await teamService.addMember(actor, id, body.userId!, body.role);
     return reply.status(201).send(successResponse(member));
   });
 

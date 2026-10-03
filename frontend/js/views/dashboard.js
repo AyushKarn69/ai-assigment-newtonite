@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { describeActivity } from '../lib/activity.js';
 import { esc, relativeTime } from '../lib/format.js';
 import { OPEN_STATUSES } from '../lib/presets.js';
-import { nameOf, teamName } from '../store.js';
+import { nameOf, state, teamName } from '../store.js';
 import { errorState, skeletonBlock } from '../states.js';
 import { avatar, icon, priorityBadge, statusBadge } from '../ui.js';
 
@@ -135,6 +135,19 @@ function activityRow(entry) {
     </a>`;
 }
 
+/** Shown to someone who has an account but has not been added to a team yet. */
+function welcomeNotice() {
+  const user = state.user;
+  return `
+    <div class="flex gap-3 rounded-xl bg-primary-fixed text-on-primary-fixed-variant px-5 py-4" role="status">
+      ${icon('waving_hand', 'text-[22px] mt-0.5')}
+      <div class="min-w-0">
+        <p class="font-headline text-lg font-semibold">Welcome, ${esc(user.name)}</p>
+        <p class="mt-1 text-sm leading-relaxed">You are not part of a team yet, so there is no work to show. Ask a team manager or an administrator to add you, and give them this email address: <strong class="font-mono break-all">${esc(user.email)}</strong>. Once you are added, your team's work appears here.</p>
+      </div>
+    </div>`;
+}
+
 function render(dash, urgent, mine) {
   const { counts, teamLoad, recentActivity } = dash;
   const maxOpen = Math.max(1, ...teamLoad.map((t) => t.open));
@@ -181,6 +194,8 @@ function render(dash, urgent, mine) {
         </div>
         <h1 class="text-3xl lg:text-4xl font-headline font-semibold tracking-tight leading-none">Operational Command</h1>
       </div>
+
+      ${state.teams.length === 0 ? welcomeNotice() : ''}
 
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">${cards}</div>
 

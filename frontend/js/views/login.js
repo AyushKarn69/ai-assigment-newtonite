@@ -40,7 +40,8 @@ export function mountLogin(container, { onSignedIn, notice } = {}) {
               <button id="login-submit" type="submit" class="${primaryButton} w-full h-10 text-sm">Sign in${icon('arrow_forward', 'text-[16px]')}</button>
             </form>
 
-            <div class="mt-6 flex items-center justify-between text-[11px] text-secondary">
+            <p class="mt-6 text-xs text-on-surface-variant">New here? <a href="#/register" class="font-semibold text-primary hover:underline">Create an account</a></p>
+            <div class="mt-4 flex items-center justify-between text-[11px] text-secondary">
               <span id="auth-health" class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-outline"></span>Checking service…</span>
             </div>
           </div>

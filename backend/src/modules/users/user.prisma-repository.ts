@@ -1,5 +1,6 @@
 import { PrismaClient, User as UserRow } from '../../shared/db/prisma';
-import { isRecordNotFound } from '../../shared/db/prisma';
+import { isRecordNotFound, isUniqueViolation } from '../../shared/db/prisma';
+import { ConflictError } from '../../shared/errors/index';
 import { CreateUserInput, User, UserRepository } from './user.entity';
 
 const toUser = (row: UserRow): User => ({
@@ -28,15 +29,23 @@ export class PrismaUserRepository implements UserRepository {
   }
 
   async create(input: CreateUserInput & { passwordHash: string }): Promise<User> {
-    const row = await this.db.user.create({
-      data: {
-        email: input.email.toLowerCase(),
-        name: input.name,
-        passwordHash: input.passwordHash,
-        role: input.role ?? 'USER',
-      },
-    });
-    return toUser(row);
+    try {
+      const row = await this.db.user.create({
+        data: {
+          email: input.email.toLowerCase(),
+          name: input.name,
+          passwordHash: input.passwordHash,
+          role: input.role ?? 'USER',
+        },
+      });
+      return toUser(row);
+    } catch (error) {
+      // two sign-ups for the same email at once: the database's unique index decides
+      if (isUniqueViolation(error)) {
+        throw new ConflictError('A user with this email already exists', 'EMAIL_ALREADY_EXISTS');
+      }
+      throw error;
+    }
   }
 
   async update(id: string, data: Partial<Omit<User, 'id' | 'createdAt'>>): Promise<User> {

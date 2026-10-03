@@ -16,6 +16,12 @@ export interface LoginInput {
   password: string;
 }
 
+export interface RegisterInput {
+  name: string;
+  email: string;
+  password: string;
+}
+
 export interface LoginResult {
   token: string;
   user: {
@@ -108,7 +114,25 @@ export class AuthService {
       throw new UnauthorizedError('Invalid email or password', 'INVALID_CREDENTIALS');
     }
     this.throttle?.recordSuccess(input.email);
+    return this.issueSession(user);
+  }
 
+  /**
+   * Self-service sign-up. The new account is ALWAYS a plain user (never an administrator,
+   * whatever the caller sends) and belongs to no team until a manager adds it. The person is
+   * signed in straight away.
+   */
+  async register(input: RegisterInput): Promise<LoginResult> {
+    const user = await this.userService.createUser({
+      email: input.email,
+      name: input.name,
+      password: input.password,
+      role: 'USER',
+    });
+    return this.issueSession(user);
+  }
+
+  private issueSession(user: { id: string; email: string; name: string; role: string }): LoginResult {
     const payload: TokenPayload = {
       sub: user.id,
       email: user.email,
@@ -121,12 +145,7 @@ export class AuthService {
 
     return {
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
     };
   }
 

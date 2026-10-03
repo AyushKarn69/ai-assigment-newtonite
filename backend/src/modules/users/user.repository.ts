@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ConflictError } from '../../shared/errors/index';
 import { User, UserRepository, CreateUserInput } from './user.entity';
 
 /**
@@ -20,6 +21,11 @@ export class InMemoryUserRepository implements UserRepository {
   }
 
   async create(input: CreateUserInput & { passwordHash: string }): Promise<User> {
+    // Check and insert with no gap between them, like a unique index: of two simultaneous
+    // sign-ups for one email exactly one succeeds.
+    if (this.emailIndex.has(input.email.toLowerCase())) {
+      throw new ConflictError('A user with this email already exists', 'EMAIL_ALREADY_EXISTS');
+    }
     const id = randomUUID();
     const now = new Date();
     const user: User = {

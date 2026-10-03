@@ -218,6 +218,8 @@ The [`buildApp()`](file:///e:/ai-assignment/backend/src/app.ts) factory accepts 
 | `JWT_SECRET` | string (min 16) | â€” | **Yes** |
 | `JWT_EXPIRES_IN` | string | 24h | No |
 | `LOCK_TIMEOUT_MINUTES` | number | 30 | No (work item lock lifetime) |
+| `ALLOW_REGISTRATION` | `true`/`false` | true | No (self-service sign-up on/off) |
+| `REGISTRATION_LIMIT_PER_HOUR` | number | 10 | No (sign-ups per client address per hour) |
 | `SEED_DEMO_DATA` | `true`/`false` | false | No (fills the in-memory stores with demo data at startup) |
 | `FRONTEND_DIR` | string | `../frontend` | No (directory of the web app to serve) |
 
@@ -554,13 +556,14 @@ Reusable Zod schemas for all list endpoints:
 | `GET` | `/api/health` | No | Health check (status, timestamp, uptime) |
 | `GET` | `/api/ready` | No | Readiness check |
 | `POST` | `/api/auth/login` | No | Login with email/password â†’ JWT token |
+| `POST` | `/api/auth/register` | No | Create an account `{ name, email, password }` → signed in (always a plain user, no team) |
 | `POST` | `/api/auth/logout` | Yes | Invalidate current token |
 | `GET` | `/api/users/me` | Yes | Get authenticated user profile |
 | `GET` | `/api/teams` | Yes | List my teams (admin: all), paginated |
 | `POST` | `/api/teams` | Admin | Create team (optional `managerId`) |
 | `GET` | `/api/teams/:id` | Member/Admin | Get team (includes `myRole`) |
 | `GET` | `/api/teams/:id/members` | Member/Admin | List members |
-| `POST` | `/api/teams/:id/members` | Manager/Admin | Add member `{userId, role?}` |
+| `POST` | `/api/teams/:id/members` | Manager/Admin | Add member `{userId or email, role?}` |
 | `PATCH` | `/api/teams/:id/members/:userId` | Manager/Admin | Change member role |
 | `DELETE` | `/api/teams/:id/members/:userId` | Manager/Admin | Remove member |
 | `GET` | `/api/work-items` | Yes | List work items (paginated, filtered, sorted) |

@@ -9,6 +9,8 @@ import { isAdmin, isManagerOf, transitionNeedsManager, usableTransitions, roleLa
 // @ts-expect-error plain JS modules without type declarations
 import { changedFields, conflictRows, theirOnlyChanges } from '../../frontend/js/lib/diff.js';
 // @ts-expect-error plain JS modules without type declarations
+import { validateRegistration, passwordStrength, byteLength } from '../../frontend/js/lib/validation.js';
+// @ts-expect-error plain JS modules without type declarations
 import { describeActivity } from '../../frontend/js/lib/activity.js';
 
 describe('format', () => {
@@ -215,5 +217,42 @@ describe('activity wording', () => {
 
   it('UILIB-021: unknown event types and missing names degrade gracefully', () => {
     expect(describeActivity({ type: 'SOMETHING_NEW' }, nameOf)).toMatchObject({ actor: 'Someone', verb: 'something new' });
+  });
+});
+
+describe('sign-up form validation', () => {
+  const good = { name: 'Nora New', email: 'nora@example.com', password: 'a-good-password', confirm: 'a-good-password' };
+
+  it('UILIB-022: a complete, valid form has no errors', () => {
+    expect(validateRegistration(good)).toEqual({});
+    expect(validateRegistration({ ...good, name: '  Nora  ', email: ' nora@example.com ' })).toEqual({});
+  });
+
+  it('UILIB-023: each field reports its own problem', () => {
+    expect(Object.keys(validateRegistration({ name: '', email: '', password: '', confirm: '' })).sort()).toEqual(['email', 'name', 'password']);
+    expect(validateRegistration({ ...good, name: 'x'.repeat(101) }).name).toMatch(/too long/);
+    expect(validateRegistration({ ...good, email: 'nope' }).email).toMatch(/email/);
+    expect(validateRegistration({ ...good, email: 'a@b' }).email).toBeDefined();
+  });
+
+  it('UILIB-024: password rules mirror the server (8 characters, 72 bytes)', () => {
+    expect(validateRegistration({ ...good, password: '1234567', confirm: '1234567' }).password).toMatch(/8/);
+    expect(validateRegistration({ ...good, password: 'x'.repeat(72), confirm: 'x'.repeat(72) })).toEqual({});
+    expect(validateRegistration({ ...good, password: 'x'.repeat(73), confirm: 'x'.repeat(73) }).password).toMatch(/72/);
+    // 37 two-byte characters is only 37 characters but 74 bytes
+    expect(byteLength('é'.repeat(37))).toBe(74);
+    expect(validateRegistration({ ...good, password: 'é'.repeat(37), confirm: 'é'.repeat(37) }).password).toMatch(/72/);
+  });
+
+  it('UILIB-025: the confirmation must match, and is only checked once the password itself is fine', () => {
+    expect(validateRegistration({ ...good, confirm: 'different-password' }).confirm).toMatch(/match/);
+    expect(validateRegistration({ ...good, password: 'short', confirm: 'other' })).not.toHaveProperty('confirm');
+  });
+
+  it('UILIB-026: password strength is only a hint: short < ok < long and mixed', () => {
+    expect(passwordStrength('short')).toBe(0);
+    expect(passwordStrength('alllowercase')).toBeLessThan(passwordStrength('Mixed-Case-and-Digits-123'));
+    expect(passwordStrength('Mixed-Case-and-Digits-123')).toBe(3);
+    expect(passwordStrength(undefined)).toBe(0);
   });
 });
