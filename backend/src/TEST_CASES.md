@@ -178,3 +178,35 @@
 | LOCK-027 | Enforcement | Lock on one item, edit another | 409 LOCK_REQUIRED (lock is per item) | PASS |
 | LOCK-028 | Enforcement | Lock holder (member) tries to assign | 403 TEAM_MANAGER_REQUIRED (lock does not widen permissions) | PASS |
 | LOCK-029 | Enforcement | Member of team A locks team B's item | 403; team B's manager can lock it | PASS |
+
+## Phase F — Activity History
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| ACTREPO-001 | Activity Repository | Sequence numbers | Start at 1 and are independent per work item | PASS |
+| ACTREPO-002 | Activity Repository | 25 concurrent appends | Distinct, gap-free sequence numbers 1..25 | PASS |
+| ACTREPO-003 | Activity Repository | List scoping, type filter, ordering | Only that item's entries; filter and asc/desc work | PASS |
+| ACTREPO-004 | Activity Repository | Pagination | Correct slices; totalCount unaffected by page | PASS |
+| ACTREPO-005 | Activity Repository | Mutating supplied or returned objects | Stored history unchanged (immutable) | PASS |
+| ACTREPO-006 | Activity Repository | Entry without changes/metadata | Both default to empty | PASS |
+| ACT-001 | Recording | Create an item | CREATED entry: initial values from null, actor id+name, version 1 | PASS |
+| ACT-002 | Recording | Save changing title and priority | One UPDATED entry listing exactly those two fields with before/after; version 2 | PASS |
+| ACT-003 | Recording | Manager changes status and assignee | Both in one UPDATED entry, attributed to the manager | PASS |
+| ACT-004 | Recording | Three successive title edits | Each 'from' equals the previous 'to' | PASS |
+| ACT-005 | Recording | No-op save (same values) | Nothing recorded | PASS |
+| ACT-006 | Recording | 403, 422, 409 (stale), 409 (no lock), 423 requests | Nothing recorded; only the one successful save adds an entry | PASS |
+| ACT-007 | Lock events | Acquire, renew, two heartbeats | Exactly one LOCK_ACQUIRED (with expiresAt) | PASS |
+| ACT-008 | Lock events | Holder releases | LOCK_RELEASED by the holder | PASS |
+| ACT-009 | Lock events | Manager force-releases | LOCK_FORCE_RELEASED by manager with metadata.previousHolderId | PASS |
+| ACT-010 | Lock events | Blocked acquire, refused release, outsider acquire | Nothing recorded | PASS |
+| ACT-011 | Lock events | Lock taken over after expiry | Second LOCK_ACQUIRED by the new user | PASS |
+| ACT-012 | Reading | Create → lock → 2 saves → release | CREATED, LOCK_ACQUIRED, UPDATED, UPDATED, LOCK_RELEASED; sequences 1..5 | PASS |
+| ACT-013 | Reading | Default order / order=asc | Newest first / oldest first | PASS |
+| ACT-014 | Reading | Timestamps | Taken from the clock; gaps match elapsed time | PASS |
+| ACT-015 | Reading | type filter | Only that type; invalid type 400 | PASS |
+| ACT-016 | Reading | Pagination | Correct slices and meta (totalPages, hasNext, hasPrev); pageSize>100 rejected | PASS |
+| ACT-017 | Reading | Two items | Histories are separate; each starts at sequence 1 | PASS |
+| ACT-018 | Access | No token | 401 | PASS |
+| ACT-019 | Access | Member, manager, admin, other-team user | 200 / 200 / 200 / 403 NOT_TEAM_MEMBER | PASS |
+| ACT-020 | Access | Unknown item / malformed id | 404 WORK_ITEM_NOT_FOUND / 400 | PASS |
+| ACT-021 | Access | POST/PATCH/PUT/DELETE on the activity path (as admin) | 404 for all; history unchanged (read-only) | PASS |

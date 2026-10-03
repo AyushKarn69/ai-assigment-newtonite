@@ -1,3 +1,5 @@
+import { ActivityRecorder } from '../activity/activity.service';
+import { ActivityType, FieldChange } from '../activity/activity.entity';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { TeamRepository } from '../teams/team.entity';
 import {
@@ -57,6 +59,7 @@ export class WorkItemService {
     private readonly teamRepo: TeamRepository,
     private readonly authorization: AuthorizationService,
     private readonly editLocks: EditLockGuard,
+    private readonly activity: ActivityRecorder,
   ) {}
 
   /** Team member (or admin). Setting an assignee at creation requires a manager. */
@@ -70,7 +73,7 @@ export class WorkItemService {
       await this.assertAssigneeInTeam(input.teamId, assigneeId);
     }
 
-    return this.workItemRepo.create({
+    const item = await this.workItemRepo.create({
       title: input.title,
       description: input.description ?? '',
       type: input.type,
@@ -79,6 +82,24 @@ export class WorkItemService {
       createdBy: actor.id,
       assigneeId,
     });
+
+    const initial: Array<keyof WorkItem> = [
+      'title',
+      'description',
+      'type',
+      'priority',
+      'status',
+      'teamId',
+      'assigneeId',
+    ];
+    await this.activity.record({
+      workItemId: item.id,
+      type: ActivityType.CREATED,
+      actorId: actor.id,
+      changes: initial.map((field) => ({ field, from: null, to: item[field] })),
+      metadata: { version: item.version },
+    });
+    return item;
   }
 
   /** Admin sees everything; everyone else only items of teams they belong to. */
@@ -154,6 +175,17 @@ export class WorkItemService {
       const current = await this.workItemRepo.findById(id);
       throw this.versionConflict(current?.version, command.version);
     }
+
+    const changes: FieldChange[] = (Object.keys(patch) as Array<keyof WorkItemPatch>).map(
+      (field) => ({ field, from: item[field], to: patch[field] }),
+    );
+    await this.activity.record({
+      workItemId: id,
+      type: ActivityType.UPDATED,
+      actorId: actor.id,
+      changes,
+      metadata: { version: updated.version },
+    });
     return updated;
   }
 

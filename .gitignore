@@ -34,3 +34,5 @@ prisma/*.db-journal
 # Temporary
 tmp/
 temp/
+ui-resources/
+

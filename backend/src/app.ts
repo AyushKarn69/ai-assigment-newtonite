@@ -8,6 +8,7 @@ import { createContainer, AppContainer } from './container';
 import { registerAuthRoutes } from './modules/auth/index';
 import { registerTeamRoutes } from './modules/teams/index';
 import { registerWorkItemRoutes, registerWorkItemLockRoutes } from './modules/work-items/index';
+import { registerActivityRoutes } from './modules/activity/index';
 
 export interface AppDependencies {
   config?: Config;
@@ -70,6 +71,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   registerTeamRoutes(app, container.teamService, container.authService);
   registerWorkItemRoutes(app, container.workItemService, container.authService);
   registerWorkItemLockRoutes(app, container.workItemLockService, container.authService);
+  registerActivityRoutes(app, container.activityService, container.authService);
 
   // --- Content type parser for JSON ---
   app.addContentTypeParser(

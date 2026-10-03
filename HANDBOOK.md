@@ -66,6 +66,13 @@ ai-assignment/
         │   │   ├── team.routes.ts        # /api/teams/*
         │   │   └── index.ts
         │   │
+        │   ├── activity/
+        │   │   ├── activity.entity.ts    # ActivityEntry, types, append-only repository interface
+        │   │   ├── activity.repository.ts # In-memory ActivityRepository
+        │   │   ├── activity.service.ts   # record() + authorized list()
+        │   │   ├── activity.routes.ts    # GET /api/work-items/:id/activity
+        │   │   └── index.ts
+        │   │
         │   └── work-items/
         │       ├── work-item.entity.ts    # WorkItem, enums, repository interface (CAS update)
         │       ├── work-item.workflow.ts  # Status transition map + manager rules
@@ -136,9 +143,11 @@ createContainer(config)
     → AuthorizationService(teamRepo)          # needs only findMember()
     → TeamService(teamRepo, userService, authorizationService)
     → InMemoryWorkItemRepository
+    → InMemoryActivityRepository
+    → ActivityService(activityRepo, workItemRepo, authorizationService, userService, clock)
     → InMemoryWorkItemLockStore
-    → WorkItemLockService(lockStore, workItemRepo, authorizationService, clock, timeoutMs)
-    → WorkItemService(workItemRepo, teamRepo, authorizationService, lockService)
+    → WorkItemLockService(lockStore, workItemRepo, authorizationService, clock, timeoutMs, activityService)
+    → WorkItemService(workItemRepo, teamRepo, authorizationService, lockService, activityService)
 ```
 
 `createContainer(config, { clock })` accepts an optional `Clock` so tests can control lock expiry without sleeping.
@@ -371,6 +380,33 @@ Exclusive edit locks give each work item at most one editor at a time. Reading i
 
 ---
 
+### Activity History ([`modules/activity/`](file:///e:/ai-assignment/backend/src/modules/activity))
+
+An immutable, append-only audit trail per work item, readable by team members and admins via `GET /api/work-items/:id/activity` (query: `page`, `pageSize` ≤ 100, `order` = `desc` (default, newest first) / `asc`, optional `type`).
+
+**Entry shape** — `{ id, workItemId, sequence, type, actorId, actorName, createdAt, changes[], metadata }`. `sequence` is a per-item counter starting at 1, giving a stable order even when timestamps tie. `changes` is a list of `{ field, from, to }`.
+
+| Type | Recorded when | `changes` / `metadata` |
+|---|---|---|
+| `CREATED` | Item created | Initial values (`from: null`); `metadata.version = 1` |
+| `UPDATED` | A save changed something | Only the fields that actually changed, with before/after; `metadata.version` = new version |
+| `LOCK_ACQUIRED` | A lock is newly taken (including taking over an expired one) | `metadata.expiresAt` |
+| `LOCK_RELEASED` | Holder releases | — |
+| `LOCK_FORCE_RELEASED` | Manager/admin releases someone else's lock | `metadata.previousHolderId` |
+
+**What is *not* recorded** — rejected requests (403/409/422/423), no-op saves, lock renewals and heartbeats, blocked lock attempts, and reads. An entry exists only if the change really happened.
+
+**Design notes**
+- The `ActivityRecorder` interface (`record()`) is all other modules see. The activity module in turn depends only on small lookup interfaces (`WorkItemLookup`, `UserLookup`), so module dependencies stay one-way (`work-items → activity`).
+- There is no write/update/delete API, and the repository hands out copies, so history cannot be altered.
+- Timestamps come from the injected `Clock`.
+
+**Known limitations**
+- *Lock expiry is not an event.* Expiry is lazy, so nothing is logged when a lock times out; the next `LOCK_ACQUIRED` by someone else is what shows it happened.
+- *Not transactional yet.* The change and its history entry are two separate writes; in memory this cannot fail between them, but the Prisma implementation must write both in one transaction (or use an outbox) so history can never disagree with the data.
+
+---
+
 ### Validation Schemas ([`common-schemas.ts`](file:///e:/ai-assignment/backend/src/shared/validation/common-schemas.ts))
 
 Reusable Zod schemas for all list endpoints:
@@ -406,6 +442,7 @@ Reusable Zod schemas for all list endpoints:
 | `POST` | `/api/work-items/:id/lock` | Member/Admin | Acquire (or renew) exclusive edit lock |
 | `POST` | `/api/work-items/:id/lock/heartbeat` | Holder | Extend active lock |
 | `DELETE` | `/api/work-items/:id/lock` | Holder / Manager / Admin | Release lock |
+| `GET` | `/api/work-items/:id/activity` | Member/Admin | Activity history (paginated, `order`, `type`) |
 
 \* Assignment, closing and reopening need a team manager (or admin).
 
@@ -415,7 +452,6 @@ Reusable Zod schemas for all list endpoints:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/work-items/:id/activity` | Get activity history |
 | `GET` | `/api/work-items/:id/comments` | List comments |
 | `POST` | `/api/work-items/:id/comments` | Add comment |
 | `GET` | `/api/dashboard` | Dashboard overview |
@@ -461,7 +497,7 @@ npm run build
 
 ## Test Status
 
-**154 tests passing** across 13 test files. `npm run typecheck` is clean.
+**181 tests passing** across 15 test files. `npm run typecheck` is clean.
 
 | Test File | Tests | Status |
 |---|---|---|
@@ -478,6 +514,8 @@ npm run build
 | `modules/work-items/work-item.test.ts` (WI-001…028) | 28 | ✅ All pass |
 | `modules/work-items/work-item-lock.store.test.ts` (LSTORE-001…010) | 10 | ✅ All pass |
 | `modules/work-items/work-item-lock.test.ts` (LOCK-001…029) | 29 | ✅ All pass |
+| `modules/activity/activity.repository.test.ts` (ACTREPO-001…006) | 6 | ✅ All pass |
+| `modules/activity/activity.test.ts` (ACT-001…021) | 21 | ✅ All pass |
 
 Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-assignment/backend/src/TEST_CASES.md).
 
@@ -492,7 +530,7 @@ Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-a
 | **C** | Teams + Roles + Authorization | ✅ Complete |
 | **D** | Work Item domain + CRUD | ✅ Complete |
 | **E** | Exclusive Work Item locking / concurrency | ✅ Complete |
-| **F** | Activity history | ⬜ Pending |
+| **F** | Activity history | ✅ Complete |
 | **G** | Comments | ⬜ Pending |
 | **H** | Search + filtering + pagination | ⬜ Pending |
 | **I** | Async processing / notifications | ⬜ Pending |

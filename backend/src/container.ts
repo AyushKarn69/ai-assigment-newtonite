@@ -1,6 +1,7 @@
 import { InMemoryUserRepository, UserService } from './modules/users/index';
 import { AuthService, InMemorySessionStore, SessionStore } from './modules/auth/index';
 import { AuthorizationService } from './modules/authorization/index';
+import { ActivityService, InMemoryActivityRepository } from './modules/activity/index';
 import { InMemoryTeamRepository, TeamService } from './modules/teams/index';
 import {
   InMemoryWorkItemLockStore,
@@ -29,6 +30,8 @@ export interface AppContainer {
   workItemService: WorkItemService;
   workItemLockStore: InMemoryWorkItemLockStore;
   workItemLockService: WorkItemLockService;
+  activityRepository: InMemoryActivityRepository;
+  activityService: ActivityService;
 }
 
 export interface ContainerOptions {
@@ -51,6 +54,15 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
   const teamService = new TeamService(teamRepository, userService, authorizationService);
 
   const workItemRepository = new InMemoryWorkItemRepository();
+  const activityRepository = new InMemoryActivityRepository();
+  const activityService = new ActivityService(
+    activityRepository,
+    workItemRepository,
+    authorizationService,
+    userService,
+    clock,
+  );
+
   const workItemLockStore = new InMemoryWorkItemLockStore();
   const workItemLockService = new WorkItemLockService(
     workItemLockStore,
@@ -58,12 +70,14 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
     authorizationService,
     clock,
     config.LOCK_TIMEOUT_MINUTES * 60_000,
+    activityService,
   );
   const workItemService = new WorkItemService(
     workItemRepository,
     teamRepository,
     authorizationService,
     workItemLockService,
+    activityService,
   );
 
   return {
@@ -78,5 +92,7 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
     workItemService,
     workItemLockStore,
     workItemLockService,
+    activityRepository,
+    activityService,
   };
 }

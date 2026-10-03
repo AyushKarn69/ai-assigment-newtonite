@@ -7,7 +7,8 @@ export interface WorkItemLock {
 }
 
 export type AcquireResult =
-  | { acquired: true; lock: WorkItemLock }
+  /** `renewed` is true when the caller already held the lock (no new acquisition). */
+  | { acquired: true; renewed: boolean; lock: WorkItemLock }
   /** `lock` is the active lock that blocked the attempt. */
   | { acquired: false; lock: WorkItemLock };
 

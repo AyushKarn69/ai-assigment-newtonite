@@ -1,3 +1,5 @@
+import { ActivityRecorder } from '../activity/activity.service';
+import { ActivityType } from '../activity/activity.entity';
 import { AuthorizationService } from '../authorization/authorization.service';
 import {
   ConflictError,
@@ -24,6 +26,7 @@ export class WorkItemLockService implements EditLockGuard {
     private readonly authorization: AuthorizationService,
     private readonly clock: Clock,
     private readonly timeoutMs: number,
+    private readonly activity: ActivityRecorder,
   ) {}
 
   /**
@@ -40,6 +43,16 @@ export class WorkItemLockService implements EditLockGuard {
       this.timeoutMs,
     );
     if (!result.acquired) throw this.lockedBy(result.lock);
+
+    // Renewing a lock you already hold is not a new event
+    if (!result.renewed) {
+      await this.activity.record({
+        workItemId,
+        type: ActivityType.LOCK_ACQUIRED,
+        actorId: actor.id,
+        metadata: { expiresAt: result.lock.expiresAt.toISOString() },
+      });
+    }
     return result.lock;
   }
 
@@ -67,7 +80,13 @@ export class WorkItemLockService implements EditLockGuard {
     if (!current) throw this.notHeld();
 
     if (current.lockedBy === actor.id) {
-      await this.store.release(workItemId, actor.id);
+      if (await this.store.release(workItemId, actor.id)) {
+        await this.activity.record({
+          workItemId,
+          type: ActivityType.LOCK_RELEASED,
+          actorId: actor.id,
+        });
+      }
       return;
     }
 
@@ -80,7 +99,14 @@ export class WorkItemLockService implements EditLockGuard {
         'NOT_LOCK_HOLDER',
       );
     }
-    await this.store.forceRelease(workItemId);
+    if (await this.store.forceRelease(workItemId)) {
+      await this.activity.record({
+        workItemId,
+        type: ActivityType.LOCK_FORCE_RELEASED,
+        actorId: actor.id,
+        metadata: { previousHolderId: current.lockedBy },
+      });
+    }
   }
 
   /** Current active lock, or null. Team member (or admin). */

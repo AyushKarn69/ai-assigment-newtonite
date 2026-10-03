@@ -38,7 +38,7 @@ export class InMemoryWorkItemLockStore implements WorkItemLockStore {
       expiresAt: new Date(now.getTime() + ttlMs),
     };
     this.locks.set(workItemId, lock);
-    return { acquired: true, lock: { ...lock } };
+    return { acquired: true, renewed: existing !== null, lock: { ...lock } };
   }
 
   async extend(
