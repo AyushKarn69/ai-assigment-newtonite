@@ -2,6 +2,7 @@ import { InMemoryUserRepository, UserService } from './modules/users/index';
 import { AuthService, InMemorySessionStore, SessionStore } from './modules/auth/index';
 import { AuthorizationService } from './modules/authorization/index';
 import { InMemoryTeamRepository, TeamService } from './modules/teams/index';
+import { InMemoryWorkItemRepository, WorkItemService } from './modules/work-items/index';
 import { Config } from './config';
 
 /**
@@ -18,6 +19,8 @@ export interface AppContainer {
   teamRepository: InMemoryTeamRepository;
   authorizationService: AuthorizationService;
   teamService: TeamService;
+  workItemRepository: InMemoryWorkItemRepository;
+  workItemService: WorkItemService;
 }
 
 export function createContainer(config: Config): AppContainer {
@@ -33,6 +36,9 @@ export function createContainer(config: Config): AppContainer {
   const authorizationService = new AuthorizationService(teamRepository);
   const teamService = new TeamService(teamRepository, userService, authorizationService);
 
+  const workItemRepository = new InMemoryWorkItemRepository();
+  const workItemService = new WorkItemService(workItemRepository, teamRepository, authorizationService);
+
   return {
     userRepository,
     userService,
@@ -41,5 +47,7 @@ export function createContainer(config: Config): AppContainer {
     teamRepository,
     authorizationService,
     teamService,
+    workItemRepository,
+    workItemService,
   };
 }

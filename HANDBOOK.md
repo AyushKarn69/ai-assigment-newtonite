@@ -59,11 +59,19 @@ ai-assignment/
         │   │   ├── authorization.service.ts  # Admin / team-member / team-manager policy
         │   │   └── index.ts
         │   │
-        │   └── teams/
-        │       ├── team.entity.ts        # Team, TeamMember + repository interface
-        │       ├── team.repository.ts     # In-memory TeamRepository
-        │       ├── team.service.ts        # Team + membership business rules
-        │       ├── team.routes.ts        # /api/teams/*
+        │   ├── teams/
+        │   │   ├── team.entity.ts        # Team, TeamMember + repository interface
+        │   │   ├── team.repository.ts     # In-memory TeamRepository
+        │   │   ├── team.service.ts        # Team + membership business rules
+        │   │   ├── team.routes.ts        # /api/teams/*
+        │   │   └── index.ts
+        │   │
+        │   └── work-items/
+        │       ├── work-item.entity.ts    # WorkItem, enums, repository interface (CAS update)
+        │       ├── work-item.workflow.ts  # Status transition map + manager rules
+        │       ├── work-item.repository.ts # In-memory WorkItemRepository
+        │       ├── work-item.service.ts   # Create/list/get/update rules
+        │       ├── work-item.routes.ts    # /api/work-items/*
         │       └── index.ts
         │
         └── shared/
@@ -122,6 +130,8 @@ createContainer(config)
     → InMemoryTeamRepository
     → AuthorizationService(teamRepo)          # needs only findMember()
     → TeamService(teamRepo, userService, authorizationService)
+    → InMemoryWorkItemRepository
+    → WorkItemService(workItemRepo, teamRepo, authorizationService)
 ```
 
 The [`buildApp()`](file:///e:/ai-assignment/backend/src/app.ts) factory accepts an optional `container` to allow full dependency injection in tests.
@@ -293,6 +303,41 @@ Global `ADMIN` bypasses all team-level checks. Team roles are scoped per team: m
 
 ---
 
+### Work Items Module ([`modules/work-items/`](file:///e:/ai-assignment/backend/src/modules/work-items))
+
+**Domain** — a `WorkItem` has `title`, `description`, `type` (`CUSTOMER_ISSUE`, `ENGINEERING_PROBLEM`, `PAYMENT_INVESTIGATION`, `PRODUCTION_INCIDENT`, `COMPLIANCE_REQUEST`, `APPROVAL_TASK`), `status`, `priority` (`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`), `teamId` (immutable), `createdBy`, `assigneeId` (nullable), `version`, timestamps. New items start `OPEN` at version 1.
+
+**Workflow** ([`work-item.workflow.ts`](file:///e:/ai-assignment/backend/src/modules/work-items/work-item.workflow.ts)) — pure functions over a transition map:
+
+| From | Allowed next |
+|---|---|
+| `OPEN` | `IN_PROGRESS`, `CLOSED` |
+| `IN_PROGRESS` | `OPEN`, `BLOCKED`, `IN_REVIEW`, `RESOLVED` |
+| `BLOCKED` | `IN_PROGRESS` |
+| `IN_REVIEW` | `IN_PROGRESS`, `RESOLVED` |
+| `RESOLVED` | `IN_PROGRESS`, `CLOSED` |
+| `CLOSED` | `OPEN` |
+
+Anything else → `422 INVALID_STATUS_TRANSITION` (message lists the allowed targets).
+
+**Permissions**
+
+| Action | Who |
+|---|---|
+| Create, view, list | Team member (admin: any team) |
+| Edit title / description / type / priority | Team member |
+| Ordinary status transitions | Team member |
+| Close, or reopen a closed item | Team **manager** |
+| Set / change / clear assignee (also at creation) | Team **manager**; assignee must be a team member (`422 ASSIGNEE_NOT_TEAM_MEMBER`) |
+
+A `PATCH` is all-or-nothing: if any changed field is not permitted, nothing is applied.
+
+**Optimistic concurrency** — every `PATCH` must send the `version` it read. A stale version → `409 VERSION_CONFLICT`. The check is enforced atomically by the repository (`update(id, expectedVersion, patch)` is a compare-and-set, i.e. `UPDATE … WHERE id=? AND version=?` in a SQL implementation), so of two simultaneous updates exactly one wins. Re-sending unchanged values is a no-op and does not bump the version. Phase E layers exclusive edit locks on top of this.
+
+**Listing** — non-admins only see items of teams they belong to. Filters: `teamId` (membership required), `status`, `type`, `priority`, `assigneeId`. Sort: `sortBy` = `updatedAt` (default) / `createdAt` / `priority`, `sortOrder` = `desc` (default) / `asc`; paginated with the standard meta.
+
+---
+
 ### Validation Schemas ([`common-schemas.ts`](file:///e:/ai-assignment/backend/src/shared/validation/common-schemas.ts))
 
 Reusable Zod schemas for all list endpoints:
@@ -320,6 +365,12 @@ Reusable Zod schemas for all list endpoints:
 | `POST` | `/api/teams/:id/members` | Manager/Admin | Add member `{userId, role?}` |
 | `PATCH` | `/api/teams/:id/members/:userId` | Manager/Admin | Change member role |
 | `DELETE` | `/api/teams/:id/members/:userId` | Manager/Admin | Remove member |
+| `GET` | `/api/work-items` | Yes | List work items (paginated, filtered, sorted) |
+| `POST` | `/api/work-items` | Member/Admin | Create work item |
+| `GET` | `/api/work-items/:id` | Member/Admin | Get work item |
+| `PATCH` | `/api/work-items/:id` | Member/Admin* | Update work item (`version` required) |
+
+\* Assignment, closing and reopening need a team manager (or admin).
 
 ---
 
@@ -327,10 +378,6 @@ Reusable Zod schemas for all list endpoints:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/work-items` | List work items (paginated, filtered) |
-| `POST` | `/api/work-items` | Create work item |
-| `GET` | `/api/work-items/:id` | Get work item |
-| `PATCH` | `/api/work-items/:id` | Update work item |
 | `POST` | `/api/work-items/:id/lock` | Acquire exclusive edit lock |
 | `POST` | `/api/work-items/:id/lock/heartbeat` | Extend active lock |
 | `DELETE` | `/api/work-items/:id/lock` | Release lock |
@@ -347,7 +394,7 @@ Reusable Zod schemas for all list endpoints:
 |---|---|---|
 | `ADMIN` | Global | Full system access |
 | `USER` | Global | Base authenticated access |
-| `MANAGER` | Team | Manage team membership; (phase D+) manage team work, assign items, change workflow |
+| `MANAGER` | Team | Manage team membership; assign items; close/reopen work items |
 | `MEMBER` | Team | View & work on permitted items |
 
 ---
@@ -380,7 +427,7 @@ npm run build
 
 ## Test Status
 
-**80 tests passing** across 9 test files. `npm run typecheck` is clean.
+**115 tests passing** across 11 test files. `npm run typecheck` is clean.
 
 | Test File | Tests | Status |
 |---|---|---|
@@ -393,6 +440,8 @@ npm run build
 | `modules/auth/auth.test.ts` (AUTH-001…014) | 14 | ✅ All pass |
 | `modules/authorization/authorization.service.test.ts` (AUTHZ-001…006) | 6 | ✅ All pass |
 | `modules/teams/team.test.ts` (TEAM-001…024) | 24 | ✅ All pass |
+| `modules/work-items/work-item.workflow.test.ts` (WF-001…007) | 7 | ✅ All pass |
+| `modules/work-items/work-item.test.ts` (WI-001…028) | 28 | ✅ All pass |
 
 Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-assignment/backend/src/TEST_CASES.md).
 
@@ -405,7 +454,7 @@ Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-a
 | **A** | Initial setup (config, errors, health, tests) | ✅ Complete |
 | **B** | Authentication + Identity | ✅ Complete |
 | **C** | Teams + Roles + Authorization | ✅ Complete |
-| **D** | Work Item domain + CRUD | ⬜ Pending |
+| **D** | Work Item domain + CRUD | ✅ Complete |
 | **E** | Exclusive Work Item locking / concurrency | ⬜ Pending |
 | **F** | Activity history | ⬜ Pending |
 | **G** | Comments | ⬜ Pending |

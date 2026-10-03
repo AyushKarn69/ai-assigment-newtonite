@@ -94,3 +94,43 @@
 | TEAM-022 | Last Manager | Manager steps down after another is promoted | 200; remaining manager keeps role | PASS |
 | TEAM-023 | Remove Member | Removed member requests team | Removal 200; next request 403 | PASS |
 | TEAM-024 | Remove Member | Member removes others / target not a member | 403 / 404 MEMBER_NOT_FOUND | PASS |
+
+## Phase D — Work Items
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| WF-001 | Workflow | Happy path OPEN→IN_PROGRESS→IN_REVIEW→RESOLVED→CLOSED | Each step allowed | PASS |
+| WF-002 | Workflow | Skipping stages (OPEN→RESOLVED, OPEN→IN_REVIEW, BLOCKED→RESOLVED, IN_REVIEW→CLOSED) | Not allowed | PASS |
+| WF-003 | Workflow | BLOCKED item | Can only resume via IN_PROGRESS | PASS |
+| WF-004 | Workflow | Reopening | RESOLVED→IN_PROGRESS and CLOSED→OPEN allowed; CLOSED→IN_PROGRESS not | PASS |
+| WF-005 | Workflow | Transition to same status | Never allowed | PASS |
+| WF-006 | Workflow | Every status | Has at least one way out | PASS |
+| WF-007 | Workflow | Manager requirement | Only closing, and reopening a closed item, need a manager | PASS |
+| WI-001 | Auth | Work item endpoint without token | 401 | PASS |
+| WI-002 | Create | Member creates item | 201; status=OPEN, priority=MEDIUM, version=1, createdBy set, assignee null | PASS |
+| WI-003 | Create | Non-member creates in team | 403 NOT_TEAM_MEMBER | PASS |
+| WI-004 | Create | Unknown team | 404 TEAM_NOT_FOUND | PASS |
+| WI-005 | Create | Blank/overlong title, bad type, bad priority, bad teamId | 400 VALIDATION_ERROR each | PASS |
+| WI-006 | Create | Assignee at creation | Member 403 TEAM_MANAGER_REQUIRED; manager 201; non-team assignee 422 ASSIGNEE_NOT_TEAM_MEMBER | PASS |
+| WI-007 | Get | Member, admin, outsider | 200 / 200 / 403 NOT_TEAM_MEMBER | PASS |
+| WI-008 | Get | Unknown id / malformed id | 404 WORK_ITEM_NOT_FOUND / 400 | PASS |
+| WI-009 | Update | Member edits title, priority, description | 200; version 1→2; updatedAt advances; createdBy unchanged | PASS |
+| WI-010 | Update | Re-sending identical values | 200 no-op; version not bumped | PASS |
+| WI-011 | Update | Missing version / no fields / blank title | 400 each | PASS |
+| WI-012 | Concurrency | Stale version | 409 VERSION_CONFLICT; stored item unchanged | PASS |
+| WI-013 | Concurrency | Two simultaneous updates from same version | Exactly one 200 and one 409; final version 2 | PASS |
+| WI-014 | Update | Outsider update; attempt to change teamId | 403; teamId ignored (400, nothing to update) and unchanged | PASS |
+| WI-015 | Update | Unknown item | 404 | PASS |
+| WI-016 | Workflow | Member walks OPEN→IN_PROGRESS→BLOCKED→IN_PROGRESS→IN_REVIEW→RESOLVED | All 200; version increments each step | PASS |
+| WI-017 | Workflow | Invalid transition OPEN→RESOLVED | 422 INVALID_STATUS_TRANSITION listing allowed statuses | PASS |
+| WI-018 | Workflow | Close / reopen closed item | Member 403 TEAM_MANAGER_REQUIRED; manager 200 | PASS |
+| WI-019 | Workflow | CLOSED→IN_PROGRESS as manager | 422 (only CLOSED→OPEN allowed) | PASS |
+| WI-020 | Assignment | Assign / unassign / reassign | Member 403; manager 200 (including assigneeId=null) | PASS |
+| WI-021 | Assignment | Assignee outside the team | 422 ASSIGNEE_NOT_TEAM_MEMBER | PASS |
+| WI-022 | Assignment | Member sends title change + assignee change | 403 and the title change is NOT applied (all-or-nothing) | PASS |
+| WI-023 | List | User lists items | Only items from teams the user belongs to | PASS |
+| WI-024 | List | User with no teams / admin | Empty page / items from all teams | PASS |
+| WI-025 | List | teamId filter | Non-member 403; member sees that team's items | PASS |
+| WI-026 | List | Filters: status, type, priority, assigneeId | Correct subset each; invalid enum 400 | PASS |
+| WI-027 | List | Sorting by priority and createdAt, both directions | Correct order; default is updatedAt desc; invalid sortBy 400 | PASS |
+| WI-028 | List | Pagination | Correct slices and meta (totalPages, hasNext, hasPrev); pageSize>100 rejected | PASS |
