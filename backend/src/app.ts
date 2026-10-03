@@ -4,9 +4,12 @@ import helmet from '@fastify/helmet';
 import { Config, getConfig } from './config';
 import { globalErrorHandler } from './shared/middleware/error-handler';
 import { successResponse } from './shared/types/index';
+import { createContainer, AppContainer } from './container';
+import { registerAuthRoutes } from './modules/auth/index';
 
 export interface AppDependencies {
   config?: Config;
+  container?: AppContainer;
 }
 
 /**
@@ -16,6 +19,7 @@ export interface AppDependencies {
  */
 export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInstance> {
   const config = deps.config ?? getConfig();
+  const container = deps.container ?? createContainer(config);
 
   const app = Fastify({
     logger: config.NODE_ENV === 'test'
@@ -53,12 +57,14 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   });
 
   app.get('/api/ready', async () => {
-    // Later: check database, redis connectivity
     return successResponse({
       status: 'ready',
       timestamp: new Date().toISOString(),
     });
   });
+
+  // --- Module routes ---
+  registerAuthRoutes(app, container.authService);
 
   // --- Content type parser for JSON ---
   app.addContentTypeParser(
@@ -74,7 +80,8 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
     },
   );
 
-  app.log.info('Application built successfully');
+  // Expose container on app for route handlers that need it
+  app.decorate('container', container);
 
   return app;
 }

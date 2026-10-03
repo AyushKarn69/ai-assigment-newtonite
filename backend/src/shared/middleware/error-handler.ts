@@ -40,7 +40,7 @@ export function globalErrorHandler(
 
     // Attach lock info if present
     if (error instanceof LockedError && error.lockInfo) {
-      (response.error as Record<string, unknown>).lockInfo = error.lockInfo;
+      (response.error as unknown as Record<string, unknown>).lockInfo = error.lockInfo;
     }
 
     reply.status(error.statusCode).send(response);
