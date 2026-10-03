@@ -72,6 +72,10 @@ ai-assignment/
         │       ├── work-item.repository.ts # In-memory WorkItemRepository
         │       ├── work-item.service.ts   # Create/list/get/update rules
         │       ├── work-item.routes.ts    # /api/work-items/*
+        │       ├── work-item-lock.entity.ts  # WorkItemLock + lock store interface
+        │       ├── work-item-lock.store.ts   # In-memory lock store (Redis later)
+        │       ├── work-item-lock.service.ts # Acquire / heartbeat / release / guard
+        │       ├── work-item-lock.routes.ts  # /api/work-items/:id/lock*
         │       └── index.ts
         │
         └── shared/
@@ -90,6 +94,7 @@ ai-assignment/
             │   └── index.ts
             ├── utils/
             │   ├── logger.ts             # Pino logger factory
+            │   ├── clock.ts              # Clock interface (injectable time source)
             │   └── index.ts
             └── validation/
                 ├── common-schemas.ts     # Pagination & sort Zod schemas
@@ -131,8 +136,12 @@ createContainer(config)
     → AuthorizationService(teamRepo)          # needs only findMember()
     → TeamService(teamRepo, userService, authorizationService)
     → InMemoryWorkItemRepository
-    → WorkItemService(workItemRepo, teamRepo, authorizationService)
+    → InMemoryWorkItemLockStore
+    → WorkItemLockService(lockStore, workItemRepo, authorizationService, clock, timeoutMs)
+    → WorkItemService(workItemRepo, teamRepo, authorizationService, lockService)
 ```
+
+`createContainer(config, { clock })` accepts an optional `Clock` so tests can control lock expiry without sleeping.
 
 The [`buildApp()`](file:///e:/ai-assignment/backend/src/app.ts) factory accepts an optional `container` to allow full dependency injection in tests.
 
@@ -171,7 +180,7 @@ The [`buildApp()`](file:///e:/ai-assignment/backend/src/app.ts) factory accepts 
 | `REDIS_PORT` | number | 6379 | No |
 | `JWT_SECRET` | string (min 16) | — | **Yes** |
 | `JWT_EXPIRES_IN` | string | 24h | No |
-| `LOCK_TIMEOUT_MINUTES` | number | 30 | No |
+| `LOCK_TIMEOUT_MINUTES` | number | 30 | No (work item lock lifetime) |
 
 ---
 
@@ -330,11 +339,35 @@ Anything else → `422 INVALID_STATUS_TRANSITION` (message lists the allowed tar
 | Close, or reopen a closed item | Team **manager** |
 | Set / change / clear assignee (also at creation) | Team **manager**; assignee must be a team member (`422 ASSIGNEE_NOT_TEAM_MEMBER`) |
 
-A `PATCH` is all-or-nothing: if any changed field is not permitted, nothing is applied.
+A `PATCH` is all-or-nothing: if any changed field is not permitted, nothing is applied. Since phase E a `PATCH` also requires the caller to hold the item's edit lock.
 
-**Optimistic concurrency** — every `PATCH` must send the `version` it read. A stale version → `409 VERSION_CONFLICT`. The check is enforced atomically by the repository (`update(id, expectedVersion, patch)` is a compare-and-set, i.e. `UPDATE … WHERE id=? AND version=?` in a SQL implementation), so of two simultaneous updates exactly one wins. Re-sending unchanged values is a no-op and does not bump the version. Phase E layers exclusive edit locks on top of this.
+**Optimistic concurrency** — every `PATCH` must send the `version` it read. A stale version → `409 VERSION_CONFLICT`. The check is enforced atomically by the repository (`update(id, expectedVersion, patch)` is a compare-and-set, i.e. `UPDATE … WHERE id=? AND version=?` in a SQL implementation), so of two simultaneous updates exactly one wins. Re-sending unchanged values is a no-op and does not bump the version. Since phase E the version check is a second line of defence behind the exclusive edit lock (see below).
 
 **Listing** — non-admins only see items of teams they belong to. Filters: `teamId` (membership required), `status`, `type`, `priority`, `assigneeId`. Sort: `sortBy` = `updatedAt` (default) / `createdAt` / `priority`, `sortOrder` = `desc` (default) / `asc`; paginated with the standard meta.
+
+---
+
+### Work Item Locking ([`work-item-lock.*`](file:///e:/ai-assignment/backend/src/modules/work-items))
+
+Exclusive edit locks give each work item at most one editor at a time. Reading is never blocked.
+
+| Endpoint | Who | Behaviour |
+|---|---|---|
+| `POST /api/work-items/:id/lock` | Team member / admin | Acquire. Re-acquiring your own lock renews it. Held by someone else → `423 WORK_ITEM_LOCKED` |
+| `POST /api/work-items/:id/lock/heartbeat` | Holder | Extend expiry to now + timeout. Not held → `409 LOCK_NOT_HELD`; held by someone else → `423` |
+| `DELETE /api/work-items/:id/lock` | Holder; team manager / admin (force-release) | Release. Other members → `403 NOT_LOCK_HOLDER`; nothing locked → `409 LOCK_NOT_HELD` |
+| `GET /api/work-items/:id/lock` | Team member / admin | Current lock `{workItemId, lockedBy, acquiredAt, expiresAt}` or `null` |
+
+**Rules**
+- A lock belongs to a *user* and expires `LOCK_TIMEOUT_MINUTES` (default 30) after acquisition or the last heartbeat.
+- Expiry is lazy: an expired lock is treated exactly like no lock (no background job). An expired lock cannot be revived by the old holder; it must be re-acquired.
+- **Editing requires the lock.** `PATCH /api/work-items/:id` → `409 LOCK_REQUIRED` if nobody holds the lock (or it expired), `423 WORK_ITEM_LOCKED` if someone else does. Holding the lock does not widen permissions (a member still cannot assign or close).
+- The optimistic `version` check still runs, so a stale save is rejected even for the lock holder.
+- Locked errors carry `error.lockInfo = { lockedBy, expiresAt }` so clients can show who is editing and until when.
+
+**Atomicity** — all `WorkItemLockStore` methods must be atomic (`acquire` is "take if free, expired or already mine"). The in-memory store relies on the single-threaded event loop; a Redis store would use `SET NX PX` plus small Lua scripts. 20 simultaneous acquirers yield exactly one winner (LSTORE-010).
+
+**Known limitation** — lock state lives in process memory, so it is lost on restart and not shared between instances until the Redis-backed store is added (phase I/J).
 
 ---
 
@@ -368,7 +401,11 @@ Reusable Zod schemas for all list endpoints:
 | `GET` | `/api/work-items` | Yes | List work items (paginated, filtered, sorted) |
 | `POST` | `/api/work-items` | Member/Admin | Create work item |
 | `GET` | `/api/work-items/:id` | Member/Admin | Get work item |
-| `PATCH` | `/api/work-items/:id` | Member/Admin* | Update work item (`version` required) |
+| `PATCH` | `/api/work-items/:id` | Member/Admin* | Update work item (`version` required, must hold the edit lock) |
+| `GET` | `/api/work-items/:id/lock` | Member/Admin | Current lock or `null` |
+| `POST` | `/api/work-items/:id/lock` | Member/Admin | Acquire (or renew) exclusive edit lock |
+| `POST` | `/api/work-items/:id/lock/heartbeat` | Holder | Extend active lock |
+| `DELETE` | `/api/work-items/:id/lock` | Holder / Manager / Admin | Release lock |
 
 \* Assignment, closing and reopening need a team manager (or admin).
 
@@ -378,9 +415,6 @@ Reusable Zod schemas for all list endpoints:
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/work-items/:id/lock` | Acquire exclusive edit lock |
-| `POST` | `/api/work-items/:id/lock/heartbeat` | Extend active lock |
-| `DELETE` | `/api/work-items/:id/lock` | Release lock |
 | `GET` | `/api/work-items/:id/activity` | Get activity history |
 | `GET` | `/api/work-items/:id/comments` | List comments |
 | `POST` | `/api/work-items/:id/comments` | Add comment |
@@ -427,7 +461,7 @@ npm run build
 
 ## Test Status
 
-**115 tests passing** across 11 test files. `npm run typecheck` is clean.
+**154 tests passing** across 13 test files. `npm run typecheck` is clean.
 
 | Test File | Tests | Status |
 |---|---|---|
@@ -442,6 +476,8 @@ npm run build
 | `modules/teams/team.test.ts` (TEAM-001…024) | 24 | ✅ All pass |
 | `modules/work-items/work-item.workflow.test.ts` (WF-001…007) | 7 | ✅ All pass |
 | `modules/work-items/work-item.test.ts` (WI-001…028) | 28 | ✅ All pass |
+| `modules/work-items/work-item-lock.store.test.ts` (LSTORE-001…010) | 10 | ✅ All pass |
+| `modules/work-items/work-item-lock.test.ts` (LOCK-001…029) | 29 | ✅ All pass |
 
 Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-assignment/backend/src/TEST_CASES.md).
 
@@ -455,7 +491,7 @@ Detailed test IDs and scenarios are tracked in [`TEST_CASES.md`](file:///e:/ai-a
 | **B** | Authentication + Identity | ✅ Complete |
 | **C** | Teams + Roles + Authorization | ✅ Complete |
 | **D** | Work Item domain + CRUD | ✅ Complete |
-| **E** | Exclusive Work Item locking / concurrency | ⬜ Pending |
+| **E** | Exclusive Work Item locking / concurrency | ✅ Complete |
 | **F** | Activity history | ⬜ Pending |
 | **G** | Comments | ⬜ Pending |
 | **H** | Search + filtering + pagination | ⬜ Pending |

@@ -118,7 +118,7 @@
 | WI-010 | Update | Re-sending identical values | 200 no-op; version not bumped | PASS |
 | WI-011 | Update | Missing version / no fields / blank title | 400 each | PASS |
 | WI-012 | Concurrency | Stale version | 409 VERSION_CONFLICT; stored item unchanged | PASS |
-| WI-013 | Concurrency | Two simultaneous updates from same version | Exactly one 200 and one 409; final version 2 | PASS |
+| WI-013 | Concurrency | Repository compare-and-set: two racing writers with the same version | Exactly one succeeds; final version 2 | PASS |
 | WI-014 | Update | Outsider update; attempt to change teamId | 403; teamId ignored (400, nothing to update) and unchanged | PASS |
 | WI-015 | Update | Unknown item | 404 | PASS |
 | WI-016 | Workflow | Member walks OPEN→IN_PROGRESS→BLOCKED→IN_PROGRESS→IN_REVIEW→RESOLVED | All 200; version increments each step | PASS |
@@ -134,3 +134,47 @@
 | WI-026 | List | Filters: status, type, priority, assigneeId | Correct subset each; invalid enum 400 | PASS |
 | WI-027 | List | Sorting by priority and createdAt, both directions | Correct order; default is updatedAt desc; invalid sortBy 400 | PASS |
 | WI-028 | List | Pagination | Correct slices and meta (totalPages, hasNext, hasPrev); pageSize>100 rejected | PASS |
+
+## Phase E — Work Item Locking
+
+| Test ID | Feature | Scenario | Expected Result | Status |
+|---|---|---|---|---|
+| LSTORE-001 | Lock Store | Acquire a free lock | Acquired; expiresAt = now + TTL | PASS |
+| LSTORE-002 | Lock Store | Acquire a lock held by someone else | Refused; holder reported; expiry unchanged | PASS |
+| LSTORE-003 | Lock Store | Holder re-acquires | Renewed; acquiredAt kept, expiresAt extended | PASS |
+| LSTORE-004 | Lock Store | Acquire after expiry (exactly at expiry time) | Taken over by the new user | PASS |
+| LSTORE-005 | Lock Store | get on active / expired / unknown lock | Lock / null / null | PASS |
+| LSTORE-006 | Lock Store | extend | Only the active holder; null for others, expired or unknown | PASS |
+| LSTORE-007 | Lock Store | release | Only the holder can release | PASS |
+| LSTORE-008 | Lock Store | forceRelease | Removes the lock regardless of holder | PASS |
+| LSTORE-009 | Lock Store | Locks on different items | Independent | PASS |
+| LSTORE-010 | Lock Store | 20 simultaneous acquirers | Exactly one wins; all see the same holder | PASS |
+| LOCK-001 | Auth | Lock endpoint without token | 401 | PASS |
+| LOCK-002 | Acquire | Member acquires | 200; lockedBy self; expiresAt = now + LOCK_TIMEOUT_MINUTES | PASS |
+| LOCK-003 | Acquire | Outsider / unknown item / admin / malformed id | 403 NOT_TEAM_MEMBER / 404 / 200 / 400 | PASS |
+| LOCK-004 | Acquire | Second user while held | 423 WORK_ITEM_LOCKED with error.lockInfo {lockedBy, expiresAt} | PASS |
+| LOCK-005 | Acquire | Holder re-acquires | 200; acquiredAt unchanged, expiry renewed | PASS |
+| LOCK-006 | Acquire | Two users acquire simultaneously | Exactly one 200 and one 423 | PASS |
+| LOCK-007 | Acquire | Lock on item A, acquire item B | Independent, both succeed | PASS |
+| LOCK-008 | Inspect | GET lock when free / held | data null / lock details | PASS |
+| LOCK-009 | Inspect | Outsider inspects; member reads locked item | 403; item still readable | PASS |
+| LOCK-010 | Heartbeat | Heartbeat at 8 of 10 minutes | Expiry pushed to now + timeout; still held after a further 8 minutes | PASS |
+| LOCK-011 | Heartbeat | Non-holder heartbeat | 423 with lockInfo | PASS |
+| LOCK-012 | Heartbeat | Heartbeat with no lock | 409 LOCK_NOT_HELD | PASS |
+| LOCK-013 | Expiry | Lock reaches its timeout | Reported as free; another user can acquire; still 423 one minute earlier | PASS |
+| LOCK-014 | Expiry | Original holder heartbeats after expiry | 409 LOCK_NOT_HELD if free; 423 naming the new holder if taken | PASS |
+| LOCK-015 | Release | Holder releases | 200; others can then lock | PASS |
+| LOCK-016 | Release | Another member releases | 403 NOT_LOCK_HOLDER; lock intact | PASS |
+| LOCK-017 | Release | Team manager / admin force-release | 200; lock removed | PASS |
+| LOCK-018 | Release | Manager of another team | 403 NOT_TEAM_MEMBER | PASS |
+| LOCK-019 | Release | Release when nothing is locked | 409 LOCK_NOT_HELD | PASS |
+| LOCK-020 | Enforcement | PATCH without holding the lock | 409 LOCK_REQUIRED; item unchanged | PASS |
+| LOCK-021 | Enforcement | PATCH while someone else holds the lock | 423 WORK_ITEM_LOCKED with lockInfo; item unchanged | PASS |
+| LOCK-022 | Enforcement | Holder edits repeatedly | All 200; lock kept afterwards | PASS |
+| LOCK-023 | Enforcement | PATCH after the lock expired | 409 LOCK_REQUIRED | PASS |
+| LOCK-024 | Enforcement | Holder idles past timeout, another user locks and saves, first user saves | First user gets 423; second user's edit preserved | PASS |
+| LOCK-025 | Enforcement | Lock holder sends a stale version | 409 VERSION_CONFLICT (version check still active) | PASS |
+| LOCK-026 | Enforcement | Edit after releasing the lock | 409 LOCK_REQUIRED | PASS |
+| LOCK-027 | Enforcement | Lock on one item, edit another | 409 LOCK_REQUIRED (lock is per item) | PASS |
+| LOCK-028 | Enforcement | Lock holder (member) tries to assign | 403 TEAM_MANAGER_REQUIRED (lock does not widen permissions) | PASS |
+| LOCK-029 | Enforcement | Member of team A locks team B's item | 403; team B's manager can lock it | PASS |

@@ -17,6 +17,7 @@ import {
   WorkItemStatus,
 } from './work-item.entity';
 import { allowedTransitions, canTransition, requiresManager } from './work-item.workflow';
+import { EditLockGuard } from './work-item-lock.service';
 
 export interface CreateWorkItemCommand {
   title: string;
@@ -55,6 +56,7 @@ export class WorkItemService {
     private readonly workItemRepo: WorkItemRepository,
     private readonly teamRepo: TeamRepository,
     private readonly authorization: AuthorizationService,
+    private readonly editLocks: EditLockGuard,
   ) {}
 
   /** Team member (or admin). Setting an assignee at creation requires a manager. */
@@ -104,7 +106,10 @@ export class WorkItemService {
   }
 
   /**
-   * Update with optimistic concurrency.
+   * Update. The caller must hold the work item's exclusive edit lock
+   * (409 LOCK_REQUIRED if nobody does, 423 WORK_ITEM_LOCKED if someone else does).
+   * The version check is kept as a second line of defence, e.g. if a lock
+   * expired and another user saved in the meantime.
    *
    * - Content fields and ordinary status transitions: team member.
    * - Changing the assignee, closing, or reopening a closed item: team manager.
@@ -116,6 +121,7 @@ export class WorkItemService {
   ): Promise<WorkItem> {
     const item = await this.requireItem(id);
     await this.authorization.assertTeamMember(actor, item.teamId);
+    await this.editLocks.assertHeldBy(actor.id, id);
 
     const patch = this.diff(item, command);
     if (Object.keys(patch).length === 0) return item; // nothing to change

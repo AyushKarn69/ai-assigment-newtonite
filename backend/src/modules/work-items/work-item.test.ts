@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../../app';
 import { createTestConfig } from '../../config';
-import { createContainer } from '../../container';
+import { AppContainer, createContainer } from '../../container';
 import { TeamRole } from '../../shared/types/auth';
 
 const PASSWORD = 'a-long-test-password';
@@ -11,6 +11,7 @@ const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
 describe('Work items – CRUD, workflow, authorization, concurrency', () => {
   const config = createTestConfig();
   let app: FastifyInstance;
+  let container: AppContainer;
 
   const ids: Record<string, string> = {};
   const tokens: Record<string, string> = {};
@@ -18,12 +19,25 @@ describe('Work items – CRUD, workflow, authorization, concurrency', () => {
 
   const as = (who: string) => ({ authorization: `Bearer ${tokens[who]}` });
 
+  const ITEM_URL = /^\/api\/work-items\/[^/]+$/;
+
+  /**
+   * Thin wrapper over app.inject. Editing a work item requires holding its lock,
+   * so a PATCH first takes the lock for `who` (an admin force-releases anyone
+   * else's lock). Lock behaviour itself is tested in work-item-lock.test.ts;
+   * the lock responses are deliberately ignored here so the PATCH result is what
+   * the tests assert on (e.g. a non-member's PATCH still fails on its own merits).
+   */
   async function api(
     method: 'GET' | 'POST' | 'PATCH',
     url: string,
     who: string,
     payload?: Record<string, unknown>,
   ) {
+    if (method === 'PATCH' && ITEM_URL.test(url)) {
+      await app.inject({ method: 'DELETE', url: `${url}/lock`, headers: as('admin') });
+      await app.inject({ method: 'POST', url: `${url}/lock`, headers: as(who) });
+    }
     return app.inject({ method, url, headers: as(who), payload });
   }
 
@@ -43,7 +57,7 @@ describe('Work items – CRUD, workflow, authorization, concurrency', () => {
   }
 
   beforeAll(async () => {
-    const container = createContainer(config);
+    container = createContainer(config);
 
     const people: Array<[string, 'ADMIN' | 'USER']> = [
       ['admin', 'ADMIN'],
@@ -272,19 +286,17 @@ describe('Work items – CRUD, workflow, authorization, concurrency', () => {
       expect(current).toMatchObject({ title: item.title, priority: 'LOW', version: 2 });
     });
 
-    it('WI-013: of two concurrent updates from the same version exactly one wins', async () => {
+    it('WI-013: the repository compare-and-set lets exactly one of two racing writers win', async () => {
       const item = await createItem('mo');
       const [a, b] = await Promise.all([
-        api('PATCH', `/api/work-items/${item.id}`, 'mo', { version: 1, title: 'From mo' }),
-        api('PATCH', `/api/work-items/${item.id}`, 'max', { version: 1, title: 'From max' }),
+        container.workItemRepository.update(item.id, 1, { title: 'Writer A' }),
+        container.workItemRepository.update(item.id, 1, { title: 'Writer B' }),
       ]);
 
-      expect([a.statusCode, b.statusCode].sort()).toEqual([200, 409]);
-
-      const winner = a.statusCode === 200 ? a : b;
-      const current = (await api('GET', `/api/work-items/${item.id}`, 'mia')).json().data;
-      expect(current.version).toBe(2);
-      expect(current.title).toBe(winner.json().data.title);
+      expect([a, b].filter((r) => r !== null)).toHaveLength(1);
+      const current = await container.workItemRepository.findById(item.id);
+      expect(current!.version).toBe(2);
+      expect(current!.title).toBe((a ?? b)!.title);
     });
 
     it('WI-014: outsiders cannot update, and the team cannot be changed', async () => {
