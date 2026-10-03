@@ -97,11 +97,11 @@ Created by `SEED_DEMO_DATA=true`. **Every demo account uses the password `demo-p
 
 | Email | Name | Global role | Teams (role) |
 |---|---|---|---|
-| `ada@newtonite.test` | Ada Okafor | **Administrator** | sees every team |
-| `sarah@newtonite.test` | Sarah Chen | User | Platform Engineering (**Manager**), Core Infrastructure (Member) |
-| `liam@newtonite.test` | Liam Vance | User | Data Streaming (**Manager**), Platform Engineering (Member) |
-| `elena@newtonite.test` | Elena Rostova | User | Logistics & Billing (**Manager**), Platform Engineering (Member) |
-| `carlos@newtonite.test` | Carlos Mendez | User | Core Infrastructure (**Manager**), Data Streaming (Member) |
+| `ananya@newtonite.test` | Ananya Iyer | **Administrator** | sees every team |
+| `rohan@newtonite.test` | Rohan Sharma | User | Platform Engineering (**Manager**), Core Infrastructure (Member) |
+| `vikram@newtonite.test` | Vikram Singh | User | Data Streaming (**Manager**), Platform Engineering (Member) |
+| `meera@newtonite.test` | Meera Krishnan | User | Logistics & Billing (**Manager**), Platform Engineering (Member) |
+| `arjun@newtonite.test` | Arjun Patel | User | Core Infrastructure (**Manager**), Data Streaming (Member) |
 | `priya@newtonite.test` | Priya Nair | User | Platform Engineering, Data Streaming, Logistics & Billing (all Member) |
 
 The data contains 4 teams and 14 work items in every status and priority, with history, comments and notifications.
@@ -112,7 +112,7 @@ The data contains 4 teams and 14 work items in every status and priority, with h
 
 ## Using the app
 
-1. **Sign in** as `sarah@newtonite.test` (a manager — she can do the most).
+1. **Sign in** as `rohan@newtonite.test` (a team manager, so the most actions are available).
 2. **Dashboard** — counters (my work, high/critical, unassigned, blocked), urgent items, team load and recent activity. Click a counter to open the matching list.
 3. **Work Items** — search by title, key (`NW-1003`) or text; use the quick filters, the dropdowns, sorting and paging.
 4. **Create** — *New Work Item* (top right). Managers can set the owner at creation.
@@ -121,7 +121,7 @@ The data contains 4 teams and 14 work items in every status and priority, with h
    - **Move to** — change status (only valid next steps are offered; closing and reopening need a manager).
    - **Assign / Reassign** — managers only.
    - **Notes** — add comments. **Audit trail** — every change, lock event and comment, newest first.
-6. **See the lock in action** — sign in as a second person in a private window (e.g. `liam@newtonite.test`), open the same item and try to edit while the first person is editing.
+6. **See the lock in action** — sign in as a second person in a private window (e.g. `vikram@newtonite.test`), open the same item and try to edit while the first person is editing.
 7. **Notifications** — the bell shows when you are assigned work, an item you own changes status or gets a comment, or your lock is released by a manager.
 
 ### Adding new people to teams
@@ -209,7 +209,7 @@ flowchart LR
 
 - **Routes → services → repository interfaces → Prisma/PostgreSQL.** Services never import Prisma; each repository has an in-memory and a Prisma implementation, selected once in `src/container.ts`.
 - The decisions behind the important choices (locking, transactions, sync vs async, authorization, layering) are explained, with their trade-offs, in [`ENGINEERING_DECISIONS.md`](ENGINEERING_DECISIONS.md).
-- A detailed module-by-module reference (endpoints, rules, error codes) is in [`HANDBOOK.md`](HANDBOOK.md).
+- Test-by-test documentation of what the suite proves is in [`backend/src/TEST_CASES.md`](backend/src/TEST_CASES.md).
 
 ```
 backend/

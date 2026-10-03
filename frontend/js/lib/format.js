@@ -17,7 +17,7 @@ export function humanize(value) {
     .join(' ');
 }
 
-/** "Sarah Chen" -> "SC"; falls back to "?" */
+/** "Rohan Sharma" -> "RS"; falls back to "?" */
 export function initials(name) {
   const parts = String(name ?? '')
     .trim()

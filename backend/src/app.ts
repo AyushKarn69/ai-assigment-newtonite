@@ -54,7 +54,7 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
 
   await app.register(helmet, {
     // The web app uses the Tailwind CDN, Google Fonts and inline styles/scripts,
-    // so production needs those allowed explicitly (see HANDBOOK, "Web app").
+    // so production needs those allowed explicitly (see the README, "Known limitations").
     contentSecurityPolicy:
       config.NODE_ENV === 'production'
         ? {

@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   if (config.SEED_DEMO_DATA && (await container.userRepository.findAll()).length === 0) {
     const seeded = await seedDemoData(container);
     logger.info(
-      { ...seeded, accounts: 'ada@newtonite.test (admin), sarah@, liam@, elena@, carlos@, priya@newtonite.test' },
+      { ...seeded, accounts: 'ananya@newtonite.test (admin), rohan@, vikram@, meera@, arjun@, priya@newtonite.test' },
       `Demo data loaded — every demo account uses the password "${DEMO_PASSWORD}"`,
     );
   }

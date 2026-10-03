@@ -28,7 +28,7 @@ describe('format', () => {
     expect(humanize('IN_PROGRESS')).toBe('In Progress');
     expect(humanize('CRITICAL')).toBe('Critical');
     expect(humanize('')).toBe('');
-    expect(initials('Sarah Chen')).toBe('SC');
+    expect(initials('Rohan Sharma')).toBe('RS');
     expect(initials('Madonna')).toBe('MA');
     expect(initials('  ')).toBe('?');
     expect(initials('Jean Luc Picard')).toBe('JP');
@@ -190,7 +190,7 @@ describe('activity wording', () => {
     expect(describeActivity({ type: 'LOCK_ACQUIRED', actorName: 'Mo' }, nameOf).verb).toBe('started editing');
     expect(describeActivity({ type: 'LOCK_RELEASED', actorName: 'Mo' }, nameOf).verb).toBe('finished editing');
     expect(
-      describeActivity({ type: 'LOCK_FORCE_RELEASED', actorName: 'Ada', metadata: { previousHolderId: 'u1' } }, nameOf).verb,
+      describeActivity({ type: 'LOCK_FORCE_RELEASED', actorName: 'Ananya', metadata: { previousHolderId: 'u1' } }, nameOf).verb,
     ).toBe("released Max's edit lock");
   });
 
