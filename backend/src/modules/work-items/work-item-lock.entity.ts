@@ -2,9 +2,20 @@ export interface WorkItemLock {
   workItemId: string;
   /** User id of the holder. */
   lockedBy: string;
+  /** Secret proof of ownership, issued when the lock is taken and kept when it is renewed. */
+  token: string;
   acquiredAt: Date;
   expiresAt: Date;
 }
+
+/** What a mutation must prove: this user holds this lock (checked again inside the write). */
+export interface LockProof {
+  userId: string;
+  token: string;
+}
+
+/** A lock as shown to people other than the holder: the token is never revealed. */
+export type VisibleLock = Omit<WorkItemLock, 'token'> & { token?: string };
 
 export type AcquireResult =
   /** `renewed` is true when the caller already held the lock (no new acquisition). */

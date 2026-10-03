@@ -1,3 +1,6 @@
+import { ActivityEntry, NewActivity } from '../activity/activity.entity';
+import { LockProof } from './work-item-lock.entity';
+
 export enum WorkItemType {
   CUSTOMER_ISSUE = 'CUSTOMER_ISSUE',
   ENGINEERING_PROBLEM = 'ENGINEERING_PROBLEM',
@@ -98,4 +101,36 @@ export interface WorkItemRepository {
    */
   update(id: string, expectedVersion: number, patch: WorkItemPatch): Promise<WorkItem | null>;
   query(query: WorkItemQuery): Promise<WorkItemPage>;
+}
+
+/** A stored change together with the activity entry written in the same transaction. */
+export interface Committed {
+  item: WorkItem;
+  activity: ActivityEntry;
+}
+
+export type TransactionFailure = { ok: false; reason: 'LOCK_LOST' | 'NOT_FOUND' };
+
+/**
+ * Writes that must succeed or fail together with their history entry.
+ *
+ * A database implementation runs each method in ONE transaction, so a work item can never
+ * change without its activity entry (and vice versa). `updateWithActivity` also re-checks
+ * the edit lock inside that transaction — user, token and expiry — so a lock that expired or
+ * was taken over between the service's check and the write is still rejected.
+ */
+export interface WorkItemTransactions {
+  createWithActivity(
+    input: CreateWorkItemInput,
+    buildActivity: (item: WorkItem) => NewActivity,
+    now: Date,
+  ): Promise<Committed>;
+
+  updateWithActivity(args: {
+    id: string;
+    patch: WorkItemPatch;
+    proof: LockProof;
+    now: Date;
+    buildActivity: (before: WorkItem, after: WorkItem) => NewActivity;
+  }): Promise<({ ok: true } & Committed) | TransactionFailure>;
 }

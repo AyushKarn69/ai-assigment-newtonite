@@ -117,8 +117,11 @@ export function registerWorkItemRoutes(
     const actor = getAuthenticatedUser(request);
     const { id } = validateParams(request, idParams);
     const body = validateBody(request, updateBody);
+    // Optional extra proof of lock ownership; the server always validates user and expiry too
+    const header = request.headers['x-lock-token'];
+    const lockToken = Array.isArray(header) ? header[0] : header;
     return reply
       .status(200)
-      .send(successResponse(withTransitions(await workItemService.update(actor, id, body))));
+      .send(successResponse(withTransitions(await workItemService.update(actor, id, { ...body, lockToken }))));
   });
 }

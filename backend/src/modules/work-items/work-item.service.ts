@@ -8,6 +8,7 @@ import {
   UnprocessableEntityError,
 } from '../../shared/errors/index';
 import { AuthenticatedUser } from '../../shared/types/auth';
+import { Clock } from '../../shared/utils/clock';
 import {
   WorkItem,
   WorkItemPatch,
@@ -17,6 +18,7 @@ import {
   WorkItemRepository,
   WorkItemType,
   WorkItemStatus,
+  WorkItemTransactions,
 } from './work-item.entity';
 import { allowedTransitions, canTransition, requiresManager } from './work-item.workflow';
 import { EditLockGuard } from './work-item-lock.service';
@@ -33,6 +35,8 @@ export interface CreateWorkItemCommand {
 export interface UpdateWorkItemCommand {
   /** The version the client last read; the update fails with 409 if it is stale. */
   version: number;
+  /** Optional extra proof of lock ownership (the `X-Lock-Token` header). */
+  lockToken?: string;
   title?: string;
   description?: string;
   type?: WorkItemType;
@@ -63,6 +67,8 @@ export class WorkItemService {
     private readonly authorization: AuthorizationService,
     private readonly editLocks: EditLockGuard,
     private readonly activity: ActivityRecorder,
+    private readonly transactions: WorkItemTransactions,
+    private readonly clock: Clock,
   ) {}
 
   /** Team member (or admin). Setting an assignee at creation requires a manager. */
@@ -76,16 +82,6 @@ export class WorkItemService {
       await this.assertAssigneeInTeam(input.teamId, assigneeId);
     }
 
-    const item = await this.workItemRepo.create({
-      title: input.title,
-      description: input.description ?? '',
-      type: input.type,
-      priority: input.priority ?? WorkItemPriority.MEDIUM,
-      teamId: input.teamId,
-      createdBy: actor.id,
-      assigneeId,
-    });
-
     const initial: Array<keyof WorkItem> = [
       'title',
       'description',
@@ -95,13 +91,27 @@ export class WorkItemService {
       'teamId',
       'assigneeId',
     ];
-    await this.activity.record({
-      workItemId: item.id,
-      type: ActivityType.CREATED,
-      actorId: actor.id,
-      changes: initial.map((field) => ({ field, from: null, to: item[field] })),
-      metadata: { version: item.version },
-    });
+    // The item and its CREATED entry are stored in one transaction
+    const { item, activity } = await this.transactions.createWithActivity(
+      {
+        title: input.title,
+        description: input.description ?? '',
+        type: input.type,
+        priority: input.priority ?? WorkItemPriority.MEDIUM,
+        teamId: input.teamId,
+        createdBy: actor.id,
+        assigneeId,
+      },
+      (created) => ({
+        workItemId: created.id,
+        type: ActivityType.CREATED,
+        actorId: actor.id,
+        changes: initial.map((field) => ({ field, from: null, to: created[field] })),
+        metadata: { version: created.version },
+      }),
+      this.clock.now(),
+    );
+    await this.activity.announce(activity);
     return item;
   }
 
@@ -137,8 +147,12 @@ export class WorkItemService {
   /**
    * Update. The caller must hold the work item's exclusive edit lock
    * (409 LOCK_REQUIRED if nobody does, 423 WORK_ITEM_LOCKED if someone else does).
-   * The version check is kept as a second line of defence, e.g. if a lock
-   * expired and another user saved in the meantime.
+   * The lock (user + token + expiry) is validated here and AGAIN inside the database
+   * transaction that writes the change and its activity entry, so a lock that expires or
+   * changes hands in between cannot let a write through.
+   *
+   * The client's `version` is only a precondition on what the user was looking at; the
+   * write itself is protected by the lock, not by comparing versions.
    *
    * - Content fields and ordinary status transitions: team member.
    * - Changing the assignee, closing, or reopening a closed item: team manager.
@@ -150,7 +164,7 @@ export class WorkItemService {
   ): Promise<WorkItem> {
     const item = await this.requireItem(id);
     await this.authorization.assertTeamMember(actor, item.teamId);
-    await this.editLocks.assertHeldBy(actor.id, id);
+    const proof = await this.editLocks.assertHeldBy(actor.id, id, command.lockToken);
 
     const patch = this.diff(item, command);
     if (Object.keys(patch).length === 0) return item; // nothing to change
@@ -174,27 +188,41 @@ export class WorkItemService {
       }
     }
 
-    // Early, friendly check; the repository's compare-and-set below is the real guard.
+    // What the user was looking at is out of date
     if (item.version !== command.version) {
       throw this.versionConflict(item.version, command.version);
     }
-    const updated = await this.workItemRepo.update(id, command.version, patch);
-    if (!updated) {
-      const current = await this.workItemRepo.findById(id);
-      throw this.versionConflict(current?.version, command.version);
+
+    const result = await this.transactions.updateWithActivity({
+      id,
+      patch,
+      proof,
+      now: this.clock.now(),
+      buildActivity: (before, after) => {
+        const changes: FieldChange[] = (Object.keys(patch) as Array<keyof WorkItemPatch>).map(
+          (field) => ({ field, from: before[field], to: patch[field] }),
+        );
+        return {
+          workItemId: id,
+          type: ActivityType.UPDATED,
+          actorId: actor.id,
+          changes,
+          metadata: { version: after.version },
+        };
+      },
+    });
+
+    if (!result.ok) {
+      if (result.reason === 'NOT_FOUND') {
+        throw new NotFoundError('Work item not found', 'WORK_ITEM_NOT_FOUND');
+      }
+      // The lock was lost between our check and the write: report why (expired / someone else's)
+      await this.editLocks.assertHeldBy(actor.id, id, command.lockToken);
+      throw new ConflictError('The edit lock is no longer valid', 'LOCK_REQUIRED');
     }
 
-    const changes: FieldChange[] = (Object.keys(patch) as Array<keyof WorkItemPatch>).map(
-      (field) => ({ field, from: item[field], to: patch[field] }),
-    );
-    await this.activity.record({
-      workItemId: id,
-      type: ActivityType.UPDATED,
-      actorId: actor.id,
-      changes,
-      metadata: { version: updated.version },
-    });
-    return updated;
+    await this.activity.announce(result.activity);
+    return result.item;
   }
 
   /** Only the fields that actually differ from the stored item. */

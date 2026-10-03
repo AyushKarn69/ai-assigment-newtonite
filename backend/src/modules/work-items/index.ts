@@ -7,6 +7,8 @@ export {
   WorkItemQuery,
   WorkItemPage,
   WorkItemPatch,
+  WorkItemTransactions,
+  Committed,
   CreateWorkItemInput,
 } from './work-item.entity';
 export { InMemoryWorkItemRepository } from './work-item.repository';
@@ -20,5 +22,6 @@ export { WorkItemLock, WorkItemLockStore, AcquireResult } from './work-item-lock
 export { InMemoryWorkItemLockStore } from './work-item-lock.store';
 export { WorkItemLockService, EditLockGuard } from './work-item-lock.service';
 export { registerWorkItemLockRoutes } from './work-item-lock.routes';
+export { InMemoryWorkItemTransactions } from './work-item.transactions';
 export { allowedTransitions, canTransition, requiresManager } from './work-item.workflow';
 export { registerWorkItemRoutes } from './work-item.routes';

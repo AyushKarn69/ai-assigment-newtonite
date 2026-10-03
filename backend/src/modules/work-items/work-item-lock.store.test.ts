@@ -16,12 +16,13 @@ describe('InMemoryWorkItemLockStore', () => {
     const result = await store.acquire('w1', 'alice', t0, TTL);
 
     expect(result.acquired).toBe(true);
-    expect(result.lock).toEqual({
+    expect(result.lock).toMatchObject({
       workItemId: 'w1',
       lockedBy: 'alice',
       acquiredAt: t0,
       expiresAt: at(10),
     });
+    expect(result.lock.token).toEqual(expect.any(String)); // proof of ownership is issued
   });
 
   it('LSTORE-002: acquiring a lock held by someone else fails and reports the holder', async () => {

@@ -14,6 +14,11 @@ import {
  */
 export interface ActivityRecorder {
   record(input: NewActivity): Promise<void>;
+  /**
+   * Tell the rest of the system about an entry that was already stored by a transaction
+   * (e.g. together with a work item change). Never fails the caller.
+   */
+  announce(entry: ActivityEntry): Promise<void>;
 }
 
 /**
@@ -55,6 +60,10 @@ export class ActivityService implements ActivityRecorder {
 
   async record(input: NewActivity): Promise<void> {
     const entry = await this.repo.append({ ...input, createdAt: this.clock.now() });
+    await this.announce(entry);
+  }
+
+  async announce(entry: ActivityEntry): Promise<void> {
     try {
       await this.publisher?.publish(entry);
     } catch {

@@ -9,14 +9,18 @@ import {
 } from '../../shared/errors/index';
 import { AuthenticatedUser, TeamRole } from '../../shared/types/auth';
 import { Clock } from '../../shared/utils/clock';
-import { WorkItemLock, WorkItemLockStore } from './work-item-lock.entity';
+import { LockProof, VisibleLock, WorkItemLock, WorkItemLockStore } from './work-item-lock.entity';
 import { WorkItemRepository } from './work-item.entity';
 
 /**
  * What WorkItemService needs from locking: proof that the editor holds the lock.
  */
 export interface EditLockGuard {
-  assertHeldBy(userId: string, workItemId: string): Promise<void>;
+  /**
+   * Throws unless `userId` holds an unexpired lock on the item (and, when given, presents the
+   * matching token). Returns the proof to re-validate inside the database transaction.
+   */
+  assertHeldBy(userId: string, workItemId: string, providedToken?: string): Promise<LockProof>;
 }
 
 export class WorkItemLockService implements EditLockGuard {
@@ -109,13 +113,17 @@ export class WorkItemLockService implements EditLockGuard {
     }
   }
 
-  /** Current active lock, or null. Team member (or admin). */
-  async getLock(actor: AuthenticatedUser, workItemId: string): Promise<WorkItemLock | null> {
+  /** Current active lock, or null. Team member (or admin). The token is shown to the holder only. */
+  async getLock(actor: AuthenticatedUser, workItemId: string): Promise<VisibleLock | null> {
     await this.authorizeMember(actor, workItemId);
-    return this.store.get(workItemId, this.clock.now());
+    const lock = await this.store.get(workItemId, this.clock.now());
+    if (!lock) return null;
+    if (lock.lockedBy === actor.id) return lock;
+    const { token: _token, ...visible } = lock;
+    return visible;
   }
 
-  async assertHeldBy(userId: string, workItemId: string): Promise<void> {
+  async assertHeldBy(userId: string, workItemId: string, providedToken?: string): Promise<LockProof> {
     const current = await this.store.get(workItemId, this.clock.now());
     if (!current) {
       throw new ConflictError(
@@ -124,6 +132,10 @@ export class WorkItemLockService implements EditLockGuard {
       );
     }
     if (current.lockedBy !== userId) throw this.lockedBy(current);
+    if (providedToken !== undefined && providedToken !== current.token) {
+      throw new ConflictError('The lock token does not match the current lock', 'LOCK_TOKEN_MISMATCH');
+    }
+    return { userId, token: current.token };
   }
 
   /** Returns the item's teamId after checking it exists and the actor may see it. */

@@ -16,6 +16,7 @@ import { InMemoryTeamRepository, TeamService } from './modules/teams/index';
 import {
   InMemoryWorkItemLockStore,
   InMemoryWorkItemRepository,
+  InMemoryWorkItemTransactions,
   WorkItemLockService,
   WorkItemService,
 } from './modules/work-items/index';
@@ -135,6 +136,8 @@ export function createContainer(config: Config, options: ContainerOptions = {}):
     authorizationService,
     workItemLockService,
     activityService,
+    new InMemoryWorkItemTransactions(workItemRepository, activityRepository, workItemLockStore),
+    clock,
   );
 
   return {

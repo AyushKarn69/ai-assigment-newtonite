@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { AcquireResult, WorkItemLock, WorkItemLockStore } from './work-item-lock.entity';
 
 /**
@@ -34,6 +35,7 @@ export class InMemoryWorkItemLockStore implements WorkItemLockStore {
     const lock: WorkItemLock = {
       workItemId,
       lockedBy: userId,
+      token: existing?.token ?? randomUUID(),
       acquiredAt: existing?.acquiredAt ?? now,
       expiresAt: new Date(now.getTime() + ttlMs),
     };

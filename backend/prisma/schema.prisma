@@ -1,0 +1,224 @@
+// Newtonite Ops — PostgreSQL schema.
+//
+// Design notes
+//  * Ids are text (application-generated UUIDs), so looking up any string simply finds nothing.
+//  * WorkItemLock.workItemId is the primary key: at most one lock row per work item, which is
+//    what makes "exactly one winner" enforceable by the database itself.
+//  * Activity is append-only; (workItemId, sequence) is unique and the sequence is handed out
+//    from WorkItem.activitySeq inside the same transaction as the change.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum TeamRole {
+  MANAGER
+  MEMBER
+}
+
+enum WorkItemType {
+  CUSTOMER_ISSUE
+  ENGINEERING_PROBLEM
+  PAYMENT_INVESTIGATION
+  PRODUCTION_INCIDENT
+  COMPLIANCE_REQUEST
+  APPROVAL_TASK
+}
+
+enum WorkItemStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  IN_REVIEW
+  RESOLVED
+  CLOSED
+}
+
+enum WorkItemPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ActivityType {
+  CREATED
+  UPDATED
+  LOCK_ACQUIRED
+  LOCK_RELEASED
+  LOCK_FORCE_RELEASED
+  COMMENT_ADDED
+}
+
+enum NotificationType {
+  ASSIGNED
+  UNASSIGNED
+  STATUS_CHANGED
+  COMMENT_ADDED
+  LOCK_FORCE_RELEASED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique // stored lower-case
+  name         String
+  passwordHash String
+  role         UserRole @default(USER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships   TeamMember[]
+  reported      WorkItem[]     @relation("Reporter")
+  assigned      WorkItem[]     @relation("Assignee")
+  locks         WorkItemLock[]
+  activities    Activity[]
+  comments      Comment[]
+  notifications Notification[]
+}
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String
+  /// lower-cased name: team names are unique ignoring case
+  nameKey     String   @unique
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members   TeamMember[]
+  workItems WorkItem[]
+}
+
+model TeamMember {
+  teamId   String
+  userId   String
+  role     TeamRole
+  joinedAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([userId])
+}
+
+model WorkItem {
+  id          String           @id @default(uuid())
+  /// 1001, 1002, ... from a database sequence (never reused, safe under concurrency)
+  number      Int              @unique @default(autoincrement())
+  key         String           @unique // "NW-1001"
+  title       String
+  description String           @default("")
+  type        WorkItemType
+  status      WorkItemStatus   @default(OPEN)
+  priority    WorkItemPriority @default(MEDIUM)
+  teamId      String
+  createdBy   String
+  assigneeId  String?
+  /// Revision counter, bumped on every change. Informational: correctness of concurrent
+  /// writes comes from the lock lease, not from comparing versions.
+  version     Int              @default(1)
+  /// Last activity sequence handed out for this item (see Activity).
+  activitySeq Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @default(now())
+
+  team     Team          @relation(fields: [teamId], references: [id])
+  reporter User          @relation("Reporter", fields: [createdBy], references: [id])
+  assignee User?         @relation("Assignee", fields: [assigneeId], references: [id])
+  lock     WorkItemLock?
+  activity Activity[]
+  comments Comment[]
+
+  @@index([teamId, updatedAt])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdBy])
+}
+
+/// Exclusive edit lease. The primary key on workItemId means a second row for the same
+/// item is impossible, so simultaneous acquirers can produce only one winner.
+model WorkItemLock {
+  workItemId String   @id
+  lockedBy   String
+  /// Secret proof of ownership, checked together with the user and expiry on every change.
+  token      String
+  acquiredAt DateTime
+  expiresAt  DateTime
+
+  workItem WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [lockedBy], references: [id])
+
+  @@index([expiresAt])
+}
+
+/// Append-only history. Rows are only ever inserted.
+model Activity {
+  id         String       @id @default(uuid())
+  workItemId String
+  sequence   Int
+  type       ActivityType
+  actorId    String
+  createdAt  DateTime
+  changes    Json         @default("[]")
+  metadata   Json         @default("{}")
+
+  workItem      WorkItem       @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  actor         User           @relation(fields: [actorId], references: [id])
+  notifications Notification[]
+
+  @@unique([workItemId, sequence])
+  @@index([workItemId, type])
+  @@index([createdAt])
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  /// creation order, stable even when timestamps tie
+  seq        Int      @unique @default(autoincrement())
+  workItemId String
+  authorId   String
+  body       String
+  createdAt  DateTime
+
+  workItem WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id])
+
+  @@index([workItemId, seq])
+}
+
+model Notification {
+  id            String           @id @default(uuid())
+  seq           Int              @unique @default(autoincrement())
+  userId        String
+  type          NotificationType
+  activityId    String
+  workItemId    String
+  workItemKey   String
+  workItemTitle String
+  actorId       String
+  actorName     String?
+  message       String
+  createdAt     DateTime
+  readAt        DateTime?
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  /// one notification per (recipient, event, kind): makes at-least-once delivery safe
+  @@unique([userId, activityId, type])
+  @@index([userId, seq])
+  @@index([userId, readAt])
+}
